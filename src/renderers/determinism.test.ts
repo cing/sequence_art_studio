@@ -7,7 +7,7 @@ import { buildHexWeaveModel } from './hexWeave';
 import { buildRibbonModel } from './ribbonStripes';
 import { buildRadialBloomModel } from './radialBloom';
 import { buildTruchetModel } from './truchetTiles';
-import { buildWangMazeModel } from './wangMaze';
+import { buildWangMazeModel, resolveWangTerrainStates } from './wangMaze';
 
 const rect = { x: 100, y: 120, width: 2000, height: 1400 };
 
@@ -17,6 +17,10 @@ const settings: ArtSettings = {
   proteinResidueStyles: buildProteinStyleMapFromScheme('protein_physicochemical_7'),
   dnaSchemeId: 'dna_classic_4',
   dnaResidueStyles: buildDnaStyleMapFromScheme('dna_classic_4'),
+  wang: {
+    variant: 'corner_sv2',
+    terrainCap: 6,
+  },
   showArtBorder: true,
   scale: 1,
   spacing: 1,
@@ -80,6 +84,30 @@ describe('renderer determinism', () => {
     expect(modelA).toEqual(modelB);
   });
 
+  it('wang edge legacy output is stable', () => {
+    const modelA = buildWangMazeModel(
+      proteinSequence,
+      rect,
+      {
+        ...settings,
+        mode: 'wang_maze',
+        wang: { ...settings.wang, variant: 'edge_legacy' },
+      },
+      'protein',
+    );
+    const modelB = buildWangMazeModel(
+      proteinSequence,
+      rect,
+      {
+        ...settings,
+        mode: 'wang_maze',
+        wang: { ...settings.wang, variant: 'edge_legacy' },
+      },
+      'protein',
+    );
+    expect(modelA).toEqual(modelB);
+  });
+
   it('truchet tile output is stable', () => {
     const modelA = buildTruchetModel(proteinSequence, rect, { ...settings, mode: 'truchet_tiles' }, 'protein');
     const modelB = buildTruchetModel(proteinSequence, rect, { ...settings, mode: 'truchet_tiles' }, 'protein');
@@ -108,7 +136,22 @@ describe('renderer determinism', () => {
 
     const modelA = buildWangMazeModel('AAAAAAAAAAAAAAAAAAAA', rect, schemeA, 'protein');
     const modelB = buildWangMazeModel('AAAAAAAAAAAAAAAAAAAA', rect, schemeB, 'protein');
-    expect(modelA.tiles[0]?.baseColor).not.toEqual(modelB.tiles[0]?.baseColor);
+    expect(modelA.terrainStates[0]).not.toEqual(modelB.terrainStates[0]);
+  });
+
+  it('wang terrain state cap is enforced', () => {
+    const terrainStates = resolveWangTerrainStates('protein', {
+      ...settings,
+      mode: 'wang_maze',
+      proteinSchemeId: 'protein_unique_20',
+      proteinResidueStyles: buildProteinStyleMapFromScheme('protein_unique_20'),
+      wang: {
+        variant: 'corner_sv2',
+        terrainCap: 6,
+      },
+    });
+    expect(terrainStates.length).toBeLessThanOrEqual(6);
+    expect(terrainStates.length).toBeGreaterThanOrEqual(2);
   });
 
   it('truchet colors change with scheme presets', () => {

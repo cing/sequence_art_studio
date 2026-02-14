@@ -19,6 +19,7 @@ export type ArtMode = 'glyph_grid' | 'ribbon_stripes' | 'radial_bloom' | 'wang_m
 export type ShapeKind = 'circle' | 'square' | 'triangle' | 'diamond' | 'hex' | 'ring';
 
 export type FontFamilyId = 'space_grotesk' | 'ibm_plex_sans' | 'ibm_plex_mono' | 'georgia' | 'helvetica';
+export type WangVariant = 'corner_sv2' | 'edge_legacy';
 
 export interface ResidueStyle {
   color: string;
@@ -59,6 +60,10 @@ export interface ArtSettings {
   proteinResidueStyles: ResidueStyleMap;
   dnaSchemeId: string;
   dnaResidueStyles: ResidueStyleMap;
+  wang: {
+    variant: WangVariant;
+    terrainCap: number;
+  };
   showArtBorder: boolean;
   scale: number;
   spacing: number;
