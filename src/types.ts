@@ -30,6 +30,15 @@ export interface LegendSettings {
   enabled: boolean;
   position: 'top' | 'bottom' | 'left' | 'right';
   showSymbolMap: boolean;
+  fontScale: number;
+  paddingScale: number;
+  panelOpacity: number;
+}
+
+export interface GlyphLabelSettings {
+  enabled: boolean;
+  color: string;
+  sizeScale: number;
 }
 
 export interface ArtSettings {
@@ -41,7 +50,7 @@ export interface ArtSettings {
   scale: number;
   spacing: number;
   density: number;
-  backgroundId: string;
+  glyphLabels: GlyphLabelSettings;
   legend: LegendSettings;
 }
 

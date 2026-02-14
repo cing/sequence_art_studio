@@ -14,6 +14,7 @@ A React + Vite web app that converts protein or DNA sequences into printable art
   - `Glyph Grid`
   - `Ribbon Stripes`
   - `Radial Bloom`
+- White print canvas in preview/export artboard.
 - Protein styling:
   - physicochemical grouping scheme
   - reduced 5-color and 3-color schemes
@@ -24,8 +25,16 @@ A React + Vite web app that converts protein or DNA sequences into printable art
   - reduced 2-group scheme
   - IUPAC-distinct scheme
   - full per-symbol manual color + glyph overrides
+- Glyph-grid label controls:
+  - show/hide glyph letters
+  - glyph-letter font size scaling
+  - glyph-letter color
 - Editable legend metadata (title, subtitle, accession) and sequence length/type (`aa` or `nt`).
 - Toggleable symbol-key legend (amino acids for proteins, IUPAC symbols for DNA).
+- Adjustable metadata legend formatting:
+  - text scale
+  - box padding
+  - panel opacity
 - Print-oriented presets: A4, Letter, and square posters.
 - Export formats: SVG, PNG, PDF.
 

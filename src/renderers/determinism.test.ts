@@ -17,11 +17,18 @@ const settings: ArtSettings = {
   scale: 1,
   spacing: 1,
   density: 1,
-  backgroundId: 'paper_warm',
+  glyphLabels: {
+    enabled: true,
+    color: '#21303a',
+    sizeScale: 1,
+  },
   legend: {
     enabled: true,
     position: 'bottom',
     showSymbolMap: true,
+    fontScale: 1,
+    paddingScale: 1,
+    panelOpacity: 0.85,
   },
 };
 

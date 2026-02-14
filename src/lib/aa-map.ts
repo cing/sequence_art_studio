@@ -7,15 +7,6 @@ export const PROTEIN_STYLEABLE_SYMBOLS = [...AMINO_ACIDS_20, 'X', 'U', 'O'] as c
 
 export const GLYPH_SHAPES: ShapeKind[] = ['circle', 'square', 'triangle', 'diamond', 'hex', 'ring'];
 
-export interface BackgroundPreset {
-  id: string;
-  label: string;
-  base: string;
-  accentA: string;
-  accentB: string;
-  grainOpacity: number;
-}
-
 export interface StyleSchemePreset {
   id: string;
   label: string;
@@ -42,41 +33,6 @@ export const PROTEIN_STYLE_SCHEMES: StyleSchemePreset[] = [
     id: 'protein_unique_20',
     label: 'Protein: Unique 20-color',
     description: 'Distinct color for each canonical amino acid.',
-  },
-];
-
-export const BACKGROUNDS: BackgroundPreset[] = [
-  {
-    id: 'paper_warm',
-    label: 'Warm Paper',
-    base: '#f4efe6',
-    accentA: '#e4d9c9',
-    accentB: '#d8b4a0',
-    grainOpacity: 0.08,
-  },
-  {
-    id: 'sea_glass',
-    label: 'Sea Glass',
-    base: '#e3f6f5',
-    accentA: '#a6e3e9',
-    accentB: '#71c9ce',
-    grainOpacity: 0.07,
-  },
-  {
-    id: 'night_press',
-    label: 'Night Press',
-    base: '#101820',
-    accentA: '#1f2833',
-    accentB: '#66fcf1',
-    grainOpacity: 0.11,
-  },
-  {
-    id: 'mint_sky',
-    label: 'Mint Sky',
-    base: '#e8f9f3',
-    accentA: '#c4f1be',
-    accentB: '#6dd3ce',
-    grainOpacity: 0.08,
   },
 ];
 
@@ -230,8 +186,4 @@ export function buildProteinStyleMapFromScheme(schemeId: string): ResidueStyleMa
 export function getProteinResidueStyle(residue: string, styleMap: ResidueStyleMap): ResidueStyle {
   const key = normalizeProteinResidue(residue);
   return styleMap[key] ?? styleMap.X ?? { color: '#7d8597', shape: 'circle', glyph: 'X' };
-}
-
-export function getBackground(backgroundId: string): BackgroundPreset {
-  return BACKGROUNDS.find((item) => item.id === backgroundId) ?? BACKGROUNDS[0];
 }

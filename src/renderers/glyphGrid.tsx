@@ -106,25 +106,45 @@ function polygonPoints(x: number, y: number, radius: number, edges: number, offs
   return points.join(' ');
 }
 
-function renderShape(cell: GlyphCell): ReactNode {
+interface ShapeLayer {
+  dx: number;
+  dy: number;
+  sizeScale: number;
+  rotateJitter: number;
+  fillOpacity: number;
+  strokeOpacity: number;
+  strokeWidthScale: number;
+}
+
+function renderShapeLayer(cell: GlyphCell, layer: ShapeLayer, key: string): ReactNode {
+  const x = cell.x + layer.dx;
+  const y = cell.y + layer.dy;
+  const size = cell.size * layer.sizeScale;
+  const rotation = cell.rotation + layer.rotateJitter;
+
   const common = {
     fill: cell.shape === 'ring' ? 'none' : cell.color,
-    stroke: cell.shape === 'ring' ? cell.color : 'rgba(8, 15, 20, 0.18)',
-    strokeWidth: cell.shape === 'ring' ? Math.max(1, cell.size * 0.18) : Math.max(0.45, cell.size * 0.07),
+    fillOpacity: cell.shape === 'ring' ? undefined : layer.fillOpacity,
+    stroke: cell.shape === 'ring' ? cell.color : 'rgba(8, 15, 20, 0.2)',
+    strokeOpacity: layer.strokeOpacity,
+    strokeWidth: cell.shape === 'ring'
+      ? Math.max(1, size * 0.2 * layer.strokeWidthScale)
+      : Math.max(0.5, size * 0.08 * layer.strokeWidthScale),
   };
 
   if (cell.shape === 'circle') {
-    return <circle cx={cell.x} cy={cell.y} r={cell.size * 0.5} {...common} />;
+    return <circle key={key} cx={x} cy={y} r={size * 0.5} {...common} />;
   }
 
   if (cell.shape === 'square') {
     return (
       <rect
-        x={cell.x - cell.size * 0.5}
-        y={cell.y - cell.size * 0.5}
-        width={cell.size}
-        height={cell.size}
-        transform={`rotate(${cell.rotation} ${cell.x} ${cell.y})`}
+        key={key}
+        x={x - size * 0.5}
+        y={y - size * 0.5}
+        width={size}
+        height={size}
+        transform={`rotate(${rotation} ${x} ${y})`}
         {...common}
       />
     );
@@ -133,8 +153,9 @@ function renderShape(cell: GlyphCell): ReactNode {
   if (cell.shape === 'triangle') {
     return (
       <polygon
-        points={polygonPoints(cell.x, cell.y, cell.size * 0.58, 3, -Math.PI / 2)}
-        transform={`rotate(${cell.rotation} ${cell.x} ${cell.y})`}
+        key={key}
+        points={polygonPoints(x, y, size * 0.58, 3, -Math.PI / 2)}
+        transform={`rotate(${rotation} ${x} ${y})`}
         {...common}
       />
     );
@@ -143,8 +164,9 @@ function renderShape(cell: GlyphCell): ReactNode {
   if (cell.shape === 'diamond') {
     return (
       <polygon
-        points={polygonPoints(cell.x, cell.y, cell.size * 0.55, 4, Math.PI / 4)}
-        transform={`rotate(${cell.rotation} ${cell.x} ${cell.y})`}
+        key={key}
+        points={polygonPoints(x, y, size * 0.55, 4, Math.PI / 4)}
+        transform={`rotate(${rotation} ${x} ${y})`}
         {...common}
       />
     );
@@ -153,38 +175,94 @@ function renderShape(cell: GlyphCell): ReactNode {
   if (cell.shape === 'hex') {
     return (
       <polygon
-        points={polygonPoints(cell.x, cell.y, cell.size * 0.54, 6, Math.PI / 6)}
-        transform={`rotate(${cell.rotation} ${cell.x} ${cell.y})`}
+        key={key}
+        points={polygonPoints(x, y, size * 0.54, 6, Math.PI / 6)}
+        transform={`rotate(${rotation} ${x} ${y})`}
         {...common}
       />
     );
   }
 
-  return <circle cx={cell.x} cy={cell.y} r={cell.size * 0.42} {...common} />;
+  return <circle key={key} cx={x} cy={y} r={size * 0.42} {...common} />;
 }
 
-export function renderGlyphGrid(model: GlyphGridModel): ReactNode[] {
-  const showGlyphText = model.cells.length < 3200;
+function paintLayers(cell: GlyphCell): ShapeLayer[] {
+  const hash = residueHash(cell.index, cell.residue, 'paint-layers');
+  const jitterX = ((((hash >>> 6) % 1000) / 1000) - 0.5) * cell.size * 0.14;
+  const jitterY = ((((hash >>> 17) % 1000) / 1000) - 0.5) * cell.size * 0.14;
+  const angleJitter = (((hash >>> 10) % 1000) / 1000 - 0.5) * 8;
 
-  return model.cells.map((cell) => {
-    const groupKey = `glyph-cell-${cell.index}-${cell.x.toFixed(2)}-${cell.y.toFixed(2)}`;
-    return (
-      <g key={groupKey} opacity={0.92}>
-        {renderShape(cell)}
-        {showGlyphText && cell.size > 11 ? (
-          <text
-            x={cell.x}
-            y={cell.y + cell.size * 0.16}
-            textAnchor="middle"
-            fontSize={Math.max(6, cell.size * 0.35)}
-            fill="rgba(12, 12, 16, 0.55)"
-            fontFamily="'IBM Plex Mono', 'JetBrains Mono', monospace"
-            pointerEvents="none"
-          >
-            {cell.glyph}
-          </text>
-        ) : null}
-      </g>
-    );
-  });
+  return [
+    {
+      dx: 0,
+      dy: 0,
+      sizeScale: 1,
+      rotateJitter: 0,
+      fillOpacity: 0.92,
+      strokeOpacity: 0.2,
+      strokeWidthScale: 1,
+    },
+    {
+      dx: jitterX,
+      dy: jitterY,
+      sizeScale: 0.95,
+      rotateJitter: angleJitter,
+      fillOpacity: 0.42,
+      strokeOpacity: 0.12,
+      strokeWidthScale: 0.86,
+    },
+    {
+      dx: -jitterX * 0.72,
+      dy: -jitterY * 0.72,
+      sizeScale: 0.9,
+      rotateJitter: -angleJitter * 0.7,
+      fillOpacity: 0.26,
+      strokeOpacity: 0.1,
+      strokeWidthScale: 0.8,
+    },
+  ];
+}
+
+export function renderGlyphGrid(model: GlyphGridModel, settings: ArtSettings, uid: string): ReactNode[] {
+  const showGlyphText = settings.glyphLabels.enabled;
+  const labelSizeScale = clamp(settings.glyphLabels.sizeScale, 0.5, 2.2);
+  const brushFilterId = `${uid}-glyph-brush`;
+
+  return [
+    (
+      <defs key="glyph-grid-defs">
+        <filter id={brushFilterId} x="-12%" y="-12%" width="124%" height="124%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="1" seed="7" result="brushNoise" />
+          <feDisplacementMap in="SourceGraphic" in2="brushNoise" scale="1.5" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </defs>
+    ),
+    ...model.cells.map((cell) => {
+      const groupKey = `glyph-cell-${cell.index}-${cell.x.toFixed(2)}-${cell.y.toFixed(2)}`;
+      const layers = paintLayers(cell);
+      return (
+        <g key={groupKey} opacity={0.94}>
+          <g filter={`url(#${brushFilterId})`}>
+            {layers.map((layer, index) => renderShapeLayer(cell, layer, `${groupKey}-layer-${index}`))}
+          </g>
+          {showGlyphText && cell.size > 7 ? (
+            <text
+              x={cell.x}
+              y={cell.y + cell.size * 0.16}
+              textAnchor="middle"
+              fontSize={Math.max(5, cell.size * 0.35 * labelSizeScale)}
+              fill={settings.glyphLabels.color}
+              stroke="rgba(255, 255, 255, 0.74)"
+              strokeWidth={Math.max(0.6, cell.size * 0.06 * labelSizeScale)}
+              paintOrder="stroke fill"
+              fontFamily="'IBM Plex Mono', 'JetBrains Mono', monospace"
+              pointerEvents="none"
+            >
+              {cell.glyph}
+            </text>
+          ) : null}
+        </g>
+      );
+    }),
+  ];
 }

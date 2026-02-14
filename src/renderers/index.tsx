@@ -25,7 +25,7 @@ export function renderArt(
   if (settings.mode === 'glyph_grid') {
     const model = buildGlyphGridModel(sequence, rect, settings, sequenceType);
     return {
-      nodes: <>{renderGlyphGrid(model)}</>,
+      nodes: <>{renderGlyphGrid(model, settings, uid)}</>,
       summary: {
         plotted: model.cells.length,
         total: model.totalLength,
