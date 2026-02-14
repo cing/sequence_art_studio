@@ -5,6 +5,8 @@ import { buildDnaStyleMapFromScheme } from '../lib/dna-map';
 import { buildGlyphGridModel } from './glyphGrid';
 import { buildRibbonModel } from './ribbonStripes';
 import { buildRadialBloomModel } from './radialBloom';
+import { buildTruchetModel } from './truchetTiles';
+import { buildWangMazeModel } from './wangMaze';
 
 const rect = { x: 100, y: 120, width: 2000, height: 1400 };
 
@@ -14,6 +16,7 @@ const settings: ArtSettings = {
   proteinResidueStyles: buildProteinStyleMapFromScheme('protein_physicochemical_7'),
   dnaSchemeId: 'dna_classic_4',
   dnaResidueStyles: buildDnaStyleMapFromScheme('dna_classic_4'),
+  showArtBorder: true,
   scale: 1,
   spacing: 1,
   density: 1,
@@ -26,9 +29,16 @@ const settings: ArtSettings = {
     enabled: true,
     position: 'bottom',
     showSymbolMap: true,
+    showBorder: true,
     fontScale: 1,
     paddingScale: 1,
-    panelOpacity: 0.85,
+    textAlign: 'left',
+    boldText: false,
+    fontFamily: 'space_grotesk',
+    xOffset: 0,
+    yOffset: 0,
+    widthScale: 1,
+    heightScale: 1,
   },
 };
 
@@ -58,6 +68,56 @@ describe('renderer determinism', () => {
     const modelA = buildRadialBloomModel(proteinSequence, rect, { ...settings, mode: 'radial_bloom' }, 'protein');
     const modelB = buildRadialBloomModel(proteinSequence, rect, { ...settings, mode: 'radial_bloom' }, 'protein');
     expect(modelA).toEqual(modelB);
+  });
+
+  it('wang maze output is stable', () => {
+    const modelA = buildWangMazeModel(proteinSequence, rect, { ...settings, mode: 'wang_maze' }, 'protein');
+    const modelB = buildWangMazeModel(proteinSequence, rect, { ...settings, mode: 'wang_maze' }, 'protein');
+    expect(modelA).toEqual(modelB);
+  });
+
+  it('truchet tile output is stable', () => {
+    const modelA = buildTruchetModel(proteinSequence, rect, { ...settings, mode: 'truchet_tiles' }, 'protein');
+    const modelB = buildTruchetModel(proteinSequence, rect, { ...settings, mode: 'truchet_tiles' }, 'protein');
+    expect(modelA).toEqual(modelB);
+  });
+
+  it('wang maze colors change with scheme presets', () => {
+    const schemeA = {
+      ...settings,
+      mode: 'wang_maze' as const,
+      proteinSchemeId: 'protein_physicochemical_7',
+      proteinResidueStyles: buildProteinStyleMapFromScheme('protein_physicochemical_7'),
+    };
+    const schemeB = {
+      ...settings,
+      mode: 'wang_maze' as const,
+      proteinSchemeId: 'protein_gallery_20',
+      proteinResidueStyles: buildProteinStyleMapFromScheme('protein_gallery_20'),
+    };
+
+    const modelA = buildWangMazeModel('AAAAAAAAAAAAAAAAAAAA', rect, schemeA, 'protein');
+    const modelB = buildWangMazeModel('AAAAAAAAAAAAAAAAAAAA', rect, schemeB, 'protein');
+    expect(modelA.tiles[0]?.baseColor).not.toEqual(modelB.tiles[0]?.baseColor);
+  });
+
+  it('truchet colors change with scheme presets', () => {
+    const schemeA = {
+      ...settings,
+      mode: 'truchet_tiles' as const,
+      proteinSchemeId: 'protein_physicochemical_7',
+      proteinResidueStyles: buildProteinStyleMapFromScheme('protein_physicochemical_7'),
+    };
+    const schemeB = {
+      ...settings,
+      mode: 'truchet_tiles' as const,
+      proteinSchemeId: 'protein_gallery_20',
+      proteinResidueStyles: buildProteinStyleMapFromScheme('protein_gallery_20'),
+    };
+
+    const modelA = buildTruchetModel('AAAAAAAAAAAAAAAAAAAA', rect, schemeA, 'protein');
+    const modelB = buildTruchetModel('AAAAAAAAAAAAAAAAAAAA', rect, schemeB, 'protein');
+    expect(modelA.tiles[0]?.primaryColor).not.toEqual(modelB.tiles[0]?.primaryColor);
   });
 
   it('glyph grid spacing changes occupancy', () => {

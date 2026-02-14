@@ -34,6 +34,11 @@ export const PROTEIN_STYLE_SCHEMES: StyleSchemePreset[] = [
     label: 'Protein: Unique 20-color',
     description: 'Distinct color for each canonical amino acid.',
   },
+  {
+    id: 'protein_gallery_20',
+    label: 'Protein: Gallery Mosaic 20',
+    description: 'Curated artistic palette with 20 harmonized but distinct colors.',
+  },
 ];
 
 export function normalizeProteinResidue(raw: string): string {
@@ -170,6 +175,30 @@ function uniqueTwentyMap(): ResidueStyleMap {
   return fromAssignments(assignments);
 }
 
+function galleryTwentyMap(): ResidueStyleMap {
+  const colors = [
+    '#0b8f8a', '#2f62d5', '#f06c5a', '#f4c15d', '#6abf69',
+    '#7758d1', '#3ea8a0', '#e35d8f', '#f29d4c', '#2f9bbf',
+    '#cf5b4e', '#87b655', '#4766cf', '#d97d3f', '#4ca88a',
+    '#a25bbf', '#4d8fd6', '#b7b34f', '#d45f72', '#3a7b5f',
+  ];
+
+  const assignments: Record<string, { color: string; shape: ShapeKind }> = {
+    X: { color: '#7d8597', shape: 'circle' },
+    U: { color: '#4ca88a', shape: 'ring' },
+    O: { color: '#f29d4c', shape: 'hex' },
+  };
+
+  AMINO_ACIDS_20.forEach((residue, index) => {
+    assignments[residue] = {
+      color: colors[index % colors.length],
+      shape: GLYPH_SHAPES[(index + 2) % GLYPH_SHAPES.length],
+    };
+  });
+
+  return fromAssignments(assignments);
+}
+
 export function buildProteinStyleMapFromScheme(schemeId: string): ResidueStyleMap {
   if (schemeId === 'protein_reduced_5') {
     return reducedFiveMap();
@@ -179,6 +208,9 @@ export function buildProteinStyleMapFromScheme(schemeId: string): ResidueStyleMa
   }
   if (schemeId === 'protein_unique_20') {
     return uniqueTwentyMap();
+  }
+  if (schemeId === 'protein_gallery_20') {
+    return galleryTwentyMap();
   }
   return physicochemicalMap();
 }

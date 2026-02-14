@@ -14,7 +14,7 @@ export interface SequenceRecord {
   fastaHeader?: string;
 }
 
-export type ArtMode = 'glyph_grid' | 'ribbon_stripes' | 'radial_bloom';
+export type ArtMode = 'glyph_grid' | 'ribbon_stripes' | 'radial_bloom' | 'wang_maze' | 'truchet_tiles';
 
 export type ShapeKind = 'circle' | 'square' | 'triangle' | 'diamond' | 'hex' | 'ring';
 
@@ -30,9 +30,16 @@ export interface LegendSettings {
   enabled: boolean;
   position: 'top' | 'bottom' | 'left' | 'right';
   showSymbolMap: boolean;
+  showBorder: boolean;
   fontScale: number;
   paddingScale: number;
-  panelOpacity: number;
+  textAlign: 'left' | 'center' | 'right';
+  boldText: boolean;
+  fontFamily: 'space_grotesk' | 'ibm_plex_sans' | 'ibm_plex_mono' | 'georgia' | 'helvetica';
+  xOffset: number;
+  yOffset: number;
+  widthScale: number;
+  heightScale: number;
 }
 
 export interface GlyphLabelSettings {
@@ -47,6 +54,7 @@ export interface ArtSettings {
   proteinResidueStyles: ResidueStyleMap;
   dnaSchemeId: string;
   dnaResidueStyles: ResidueStyleMap;
+  showArtBorder: boolean;
   scale: number;
   spacing: number;
   density: number;

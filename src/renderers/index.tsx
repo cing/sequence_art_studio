@@ -3,6 +3,8 @@ import type { ArtSettings, Rect, SequenceType } from '../types';
 import { buildGlyphGridModel, renderGlyphGrid } from './glyphGrid';
 import { buildRadialBloomModel, renderRadialBloom } from './radialBloom';
 import { buildRibbonModel, renderRibbonModel } from './ribbonStripes';
+import { buildTruchetModel, renderTruchetModel } from './truchetTiles';
+import { buildWangMazeModel, renderWangMaze } from './wangMaze';
 
 export interface RenderSummary {
   plotted: number;
@@ -46,11 +48,35 @@ export function renderArt(
     };
   }
 
-  const model = buildRadialBloomModel(sequence, rect, settings, sequenceType);
+  if (settings.mode === 'radial_bloom') {
+    const model = buildRadialBloomModel(sequence, rect, settings, sequenceType);
+    return {
+      nodes: <>{renderRadialBloom(model)}</>,
+      summary: {
+        plotted: model.wedges.length,
+        total: model.totalLength,
+        warning: model.step > 1 ? `Showing every ${model.step}th symbol for readability.` : undefined,
+      },
+    };
+  }
+
+  if (settings.mode === 'truchet_tiles') {
+    const model = buildTruchetModel(sequence, rect, settings, sequenceType);
+    return {
+      nodes: <>{renderTruchetModel(model)}</>,
+      summary: {
+        plotted: model.tiles.length,
+        total: model.totalLength,
+        warning: model.step > 1 ? `Showing every ${model.step}th symbol for readability.` : undefined,
+      },
+    };
+  }
+
+  const model = buildWangMazeModel(sequence, rect, settings, sequenceType);
   return {
-    nodes: <>{renderRadialBloom(model)}</>,
+    nodes: <>{renderWangMaze(model)}</>,
     summary: {
-      plotted: model.wedges.length,
+      plotted: model.tiles.length,
       total: model.totalLength,
       warning: model.step > 1 ? `Showing every ${model.step}th symbol for readability.` : undefined,
     },

@@ -26,6 +26,11 @@ export const DNA_STYLE_SCHEMES: DnaStyleSchemePreset[] = [
     label: 'DNA: IUPAC distinct',
     description: 'Broader color separation across ambiguity codes.',
   },
+  {
+    id: 'dna_mosaic_4',
+    label: 'DNA: Mosaic Contrast 4-base',
+    description: 'High-contrast art palette tuned for Wang-tile style mosaics.',
+  },
 ];
 
 export function normalizeDnaSymbol(raw: string): string {
@@ -120,12 +125,35 @@ function iupacDistinctMap(): ResidueStyleMap {
   return fromAssignments(assignments);
 }
 
+function mosaicFourMap(): ResidueStyleMap {
+  return fromAssignments({
+    A: { color: '#0b8f8a', shape: 'circle' },
+    C: { color: '#2f62d5', shape: 'square' },
+    G: { color: '#f06c5a', shape: 'diamond' },
+    T: { color: '#f4c15d', shape: 'triangle' },
+    R: { color: '#4ca88a', shape: 'hex' },
+    Y: { color: '#8a62cf', shape: 'hex' },
+    S: { color: '#3ea8a0', shape: 'ring' },
+    W: { color: '#d97d3f', shape: 'ring' },
+    K: { color: '#d45f72', shape: 'hex' },
+    M: { color: '#2f9bbf', shape: 'hex' },
+    B: { color: '#7758d1', shape: 'triangle' },
+    D: { color: '#6abf69', shape: 'diamond' },
+    H: { color: '#e35d8f', shape: 'square' },
+    V: { color: '#87b655', shape: 'circle' },
+    N: { color: '#8d99ae', shape: 'ring' },
+  });
+}
+
 export function buildDnaStyleMapFromScheme(schemeId: string): ResidueStyleMap {
   if (schemeId === 'dna_reduced_2') {
     return reducedTwoMap();
   }
   if (schemeId === 'dna_iupac_distinct') {
     return iupacDistinctMap();
+  }
+  if (schemeId === 'dna_mosaic_4') {
+    return mosaicFourMap();
   }
   return classicMap();
 }
