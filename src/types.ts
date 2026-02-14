@@ -14,9 +14,11 @@ export interface SequenceRecord {
   fastaHeader?: string;
 }
 
-export type ArtMode = 'glyph_grid' | 'ribbon_stripes' | 'radial_bloom' | 'wang_maze' | 'truchet_tiles';
+export type ArtMode = 'glyph_grid' | 'ribbon_stripes' | 'radial_bloom' | 'wang_maze' | 'truchet_tiles' | 'hex_weave';
 
 export type ShapeKind = 'circle' | 'square' | 'triangle' | 'diamond' | 'hex' | 'ring';
+
+export type FontFamilyId = 'space_grotesk' | 'ibm_plex_sans' | 'ibm_plex_mono' | 'georgia' | 'helvetica';
 
 export interface ResidueStyle {
   color: string;
@@ -30,12 +32,14 @@ export interface LegendSettings {
   enabled: boolean;
   position: 'top' | 'bottom' | 'left' | 'right';
   showSymbolMap: boolean;
+  showTypeLength: boolean;
+  showSymbolKeyTitle: boolean;
   showBorder: boolean;
   fontScale: number;
   paddingScale: number;
   textAlign: 'left' | 'center' | 'right';
   boldText: boolean;
-  fontFamily: 'space_grotesk' | 'ibm_plex_sans' | 'ibm_plex_mono' | 'georgia' | 'helvetica';
+  fontFamily: FontFamilyId;
   xOffset: number;
   yOffset: number;
   widthScale: number;
@@ -46,6 +50,7 @@ export interface GlyphLabelSettings {
   enabled: boolean;
   color: string;
   sizeScale: number;
+  fontFamily: FontFamilyId;
 }
 
 export interface ArtSettings {

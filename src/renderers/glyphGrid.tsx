@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { resolveFontFamily } from '../lib/font-family';
 import { clamp, residueHash, sampleSequence } from '../lib/utils';
 import { getStyleForSequenceSymbol } from '../lib/style-map';
 import type { ArtSettings, Rect, SequenceType, ShapeKind } from '../types';
@@ -226,6 +227,7 @@ function paintLayers(cell: GlyphCell): ShapeLayer[] {
 export function renderGlyphGrid(model: GlyphGridModel, settings: ArtSettings, uid: string): ReactNode[] {
   const showGlyphText = settings.glyphLabels.enabled;
   const labelSizeScale = clamp(settings.glyphLabels.sizeScale, 0.5, 2.2);
+  const labelFont = resolveFontFamily(settings.glyphLabels.fontFamily);
   const brushFilterId = `${uid}-glyph-brush`;
 
   return [
@@ -255,7 +257,7 @@ export function renderGlyphGrid(model: GlyphGridModel, settings: ArtSettings, ui
               stroke="rgba(255, 255, 255, 0.74)"
               strokeWidth={Math.max(0.6, cell.size * 0.06 * labelSizeScale)}
               paintOrder="stroke fill"
-              fontFamily="'IBM Plex Mono', 'JetBrains Mono', monospace"
+              fontFamily={labelFont}
               pointerEvents="none"
             >
               {cell.glyph}

@@ -7,6 +7,7 @@ import {
 } from './lib/aa-map';
 import { DNA_STYLE_SCHEMES, DNA_SYMBOLS, buildDnaStyleMapFromScheme } from './lib/dna-map';
 import { parseFasta } from './lib/fasta';
+import { FONT_FAMILY_OPTIONS, resolveFontFamily } from './lib/font-family';
 import { buildLayout, getPrintPreset, PRINT_PRESETS } from './lib/layout';
 import { fetchNcbiNucleotide } from './lib/ncbi-nucleotide';
 import { getStyleForSequenceSymbol } from './lib/style-map';
@@ -56,7 +57,12 @@ interface LegendLayout {
   symbolTitleY: number;
 }
 
-type LegendFontFamilyId = ArtSettings['legend']['fontFamily'];
+interface LegendEntry {
+  color: string;
+  shape: ShapeKind;
+  symbols: string[];
+  label: string;
+}
 
 const DEFAULT_PROTEIN_SCHEME_ID = PROTEIN_STYLE_SCHEMES[0].id;
 const DEFAULT_DNA_SCHEME_ID = DNA_STYLE_SCHEMES[0].id;
@@ -81,14 +87,6 @@ const SHAPE_SYMBOLS: Record<ShapeKind, string> = {
   ring: '◌',
 };
 
-const LEGEND_FONT_OPTIONS: Array<{ id: LegendFontFamilyId; label: string; css: string }> = [
-  { id: 'space_grotesk', label: 'Space Grotesk', css: "'Space Grotesk', 'Avenir Next', sans-serif" },
-  { id: 'ibm_plex_sans', label: 'IBM Plex Sans', css: "'IBM Plex Sans', 'Segoe UI', sans-serif" },
-  { id: 'ibm_plex_mono', label: 'IBM Plex Mono', css: "'IBM Plex Mono', 'JetBrains Mono', monospace" },
-  { id: 'georgia', label: 'Georgia', css: "Georgia, 'Times New Roman', serif" },
-  { id: 'helvetica', label: 'Helvetica', css: "Helvetica, Arial, sans-serif" },
-];
-
 function createDefaultArtSettings(): ArtSettings {
   return {
     mode: 'glyph_grid',
@@ -104,11 +102,14 @@ function createDefaultArtSettings(): ArtSettings {
       enabled: true,
       color: '#21303a',
       sizeScale: 1,
+      fontFamily: 'ibm_plex_mono',
     },
     legend: {
       enabled: true,
       position: 'bottom',
       showSymbolMap: true,
+      showTypeLength: true,
+      showSymbolKeyTitle: true,
       showBorder: true,
       fontScale: 1,
       paddingScale: 1,
@@ -291,6 +292,28 @@ function renderLegendModeSymbol(
     );
   }
 
+  if (mode === 'hex_weave') {
+    return (
+      <g>
+        <polygon
+          points={polygonPoints(x, y, tileSize * 0.52, 6, Math.PI / 6)}
+          fill={color}
+          stroke={stroke}
+          strokeWidth={Math.max(0.7, size * 0.06)}
+        />
+        <line
+          x1={x - tileSize * 0.3}
+          y1={y + tileSize * 0.12}
+          x2={x + tileSize * 0.3}
+          y2={y - tileSize * 0.12}
+          stroke="rgba(8, 15, 20, 0.24)"
+          strokeWidth={Math.max(0.6, size * 0.05)}
+          strokeLinecap="round"
+        />
+      </g>
+    );
+  }
+
   if (mode === 'wang_maze') {
     const cx = (left + right) * 0.5;
     const cy = (top + bottom) * 0.5;
@@ -330,6 +353,9 @@ function symbolLegendTitle(sequenceType: SequenceType, mode: ArtMode): string {
   }
   if (mode === 'truchet_tiles') {
     return `${prefix} Truchet Tile Color Key`;
+  }
+  if (mode === 'hex_weave') {
+    return `${prefix} Hex Weave Color Key`;
   }
   if (mode === 'ribbon_stripes') {
     return `${prefix} Ribbon Color Key`;
@@ -420,12 +446,51 @@ function App() {
     [activeSequenceType, dnaSymbolsInSequence],
   );
 
+  const legendEntries = useMemo((): LegendEntry[] => {
+    const grouped: LegendEntry[] = [];
+    const colorKeyToIndex = new Map<string, number>();
+
+    for (const symbol of activeSymbols) {
+      const style = getStyleForSequenceSymbol(symbol, activeSequenceType, artSettings);
+      const color =
+        artSettings.mode === 'wang_maze'
+          ? getWangSymbolColor(symbol, activeSequenceType, artSettings)
+          : style.color;
+      const colorKey = color.trim().toLowerCase();
+      const existingIndex = colorKeyToIndex.get(colorKey);
+
+      if (existingIndex === undefined) {
+        colorKeyToIndex.set(colorKey, grouped.length);
+        grouped.push({
+          color,
+          shape: style.shape,
+          symbols: [symbol],
+          label: symbol,
+        });
+        continue;
+      }
+
+      const entry = grouped[existingIndex];
+      entry.symbols.push(symbol);
+
+      // If grouped colors have mixed glyph shapes, use a neutral square swatch.
+      if (entry.shape !== style.shape) {
+        entry.shape = 'square';
+      }
+    }
+
+    return grouped.map((entry) => ({
+      ...entry,
+      label: entry.symbols.join('/'),
+    }));
+  }, [activeSymbols, activeSequenceType, artSettings]);
+
   const showLegendTitle = artSettings.legend.enabled;
   const showSymbolLegendInPreview = artSettings.legend.showSymbolMap;
+  const showTypeLengthInLegend = showLegendTitle && artSettings.legend.showTypeLength;
+  const showSymbolLegendTitleInPreview = showSymbolLegendInPreview && artSettings.legend.showSymbolKeyTitle;
   const legendHasContent = showLegendTitle || showSymbolLegendInPreview;
-  const legendFontCss =
-    LEGEND_FONT_OPTIONS.find((item) => item.id === artSettings.legend.fontFamily)?.css ??
-    LEGEND_FONT_OPTIONS[0].css;
+  const legendFontCss = resolveFontFamily(artSettings.legend.fontFamily);
   const legendTextAnchor: 'start' | 'middle' | 'end' =
     artSettings.legend.textAlign === 'center'
       ? 'middle'
@@ -644,14 +709,15 @@ function App() {
     const paddingScale = clamp(artSettings.legend.paddingScale, 0.75, 1.5);
     const unit = clamp(Math.round(Math.min(container.width, container.height) * 0.08 * fontScale), 10, 52);
     const padding = clamp(Math.round(unit * 0.82 * paddingScale), 10, 54);
-    const footerText = showLegendTitle
+    const footerText = showTypeLengthInLegend
       ? `Type: ${record.sequenceType.toUpperCase()} | Length: ${record.sequence.length} ${sequenceUnit(record.sequenceType)}${metadata.accession ? ` | Accession: ${metadata.accession}` : ''}`
       : '';
 
     const minBoxWidth = Math.min(container.width, 260);
+    const longestLegendLabelLength = legendEntries.reduce((max, entry) => Math.max(max, entry.label.length), 1);
     const estimatedTextWidth = showLegendTitle
       ? Math.max(metadata.title.length, metadata.subtitle.length, footerText.length, 24) * unit * 0.6
-      : Math.max(28, activeSymbols.length * 2) * unit * 0.52;
+      : Math.max(28, longestLegendLabelLength + 8) * unit * 0.52;
     const baseWidth = clamp(
       Math.round(estimatedTextWidth + padding * 2),
       minBoxWidth,
@@ -666,7 +732,7 @@ function App() {
     const titleLines = showLegendTitle ? wrapWords(metadata.title || 'Untitled sequence', textWrapChars).slice(0, 3) : [];
     const subtitleLines =
       showLegendTitle && metadata.subtitle ? wrapWords(metadata.subtitle, textWrapChars).slice(0, 2) : [];
-    const footerLines = showLegendTitle ? wrapWords(footerText, textWrapChars).slice(0, 2) : [];
+    const footerLines = showTypeLengthInLegend ? wrapWords(footerText, textWrapChars).slice(0, 2) : [];
 
     const titleFont = clamp(Math.round(unit * 1.06), 14, 48);
     const subtitleFont = clamp(Math.round(unit * 0.78), 11, 32);
@@ -677,18 +743,22 @@ function App() {
     const footerHeight = footerLines.length * footerFont * 1.2;
 
     const subtitleGap = showLegendTitle && subtitleLines.length > 0 ? unit * 0.32 : 0;
-    const footerGap = showLegendTitle ? unit * 0.38 : 0;
-    const symbolTitleGap = showSymbolLegendInPreview ? (showLegendTitle ? unit * 0.72 : unit * 0.56) : 0;
+    const footerGap = showTypeLengthInLegend ? unit * 0.38 : 0;
+    const symbolTitleGap = showSymbolLegendTitleInPreview ? (showLegendTitle ? unit * 0.72 : unit * 0.56) : 0;
     const textHeight = showLegendTitle ? titleHeight + subtitleGap + subtitleHeight + footerGap + footerHeight : 0;
 
     const symbolCellHeight = clamp(Math.round(unit * 1.44), 22, 62);
-    const symbolCellWidth = clamp(Math.round(unit * 3.1), 68, 180);
+    const symbolCellWidth = clamp(
+      Math.max(Math.round(unit * 3.1), Math.round((longestLegendLabelLength + 3) * unit * 0.42)),
+      68,
+      220,
+    );
 
     const innerWidth = scaledWidthForWrap - padding * 2;
     const symbolCols = showSymbolLegendInPreview
       ? clamp(Math.floor(innerWidth / symbolCellWidth), 2, 10)
       : 0;
-    const symbolRows = symbolCols > 0 ? Math.ceil(activeSymbols.length / symbolCols) : 0;
+    const symbolRows = symbolCols > 0 ? Math.ceil(legendEntries.length / symbolCols) : 0;
     const symbolMapHeight = symbolRows > 0 ? symbolRows * symbolCellHeight + symbolTitleGap : 0;
 
     const desiredHeight = Math.round(
@@ -736,12 +806,14 @@ function App() {
       symbolCellW: actualSymbolCellWidth,
       symbolCellH: symbolCellHeight,
       symbolGridTop: textBottomY + symbolTitleGap,
-      symbolTitleY: textBottomY + (showLegendTitle ? unit * 0.34 : unit * 0.78),
+      symbolTitleY: showSymbolLegendTitleInPreview ? textBottomY + (showLegendTitle ? unit * 0.34 : unit * 0.78) : textBottomY,
     };
   }, [
     layout.legendRect,
     legendHasContent,
     showLegendTitle,
+    showTypeLengthInLegend,
+    showSymbolLegendTitleInPreview,
     artSettings.legend.fontScale,
     artSettings.legend.paddingScale,
     artSettings.legend.widthScale,
@@ -753,13 +825,19 @@ function App() {
     metadata.subtitle,
     metadata.title,
     record,
-    activeSymbols,
+    legendEntries,
   ]);
 
   const currentSchemeId = activeSequenceType === 'dna' ? artSettings.dnaSchemeId : artSettings.proteinSchemeId;
   const isCustomSchemeSelected =
     currentSchemeId === (activeSequenceType === 'dna' ? CUSTOM_DNA_SCHEME_ID : CUSTOM_PROTEIN_SCHEME_ID);
   const showColorMapEditor = artSettings.mode === 'glyph_grid' || isCustomSchemeSelected;
+  const supportsGlyphLabelsInCurrentMode =
+    artSettings.mode === 'glyph_grid'
+    || artSettings.mode === 'ribbon_stripes'
+    || artSettings.mode === 'wang_maze'
+    || artSettings.mode === 'truchet_tiles'
+    || artSettings.mode === 'hex_weave';
 
   const currentSchemeOptions = activeSequenceType === 'dna' ? DNA_STYLE_SCHEMES : PROTEIN_STYLE_SCHEMES;
   const legendTextX = useMemo(() => {
@@ -1005,48 +1083,80 @@ function App() {
           <h2>Metadata Legend</h2>
           <small>Edit legend text directly in the preview editor panel.</small>
 
-          <label className="inline-checkbox">
-            <input
-              type="checkbox"
-              checked={artSettings.legend.enabled}
-              onChange={(event) =>
-                setArtSettings((current) => ({
-                  ...current,
-                  legend: { ...current.legend, enabled: event.target.checked },
-                }))
-              }
-            />
-            Show legend title
-          </label>
+          <div className="metadata-toggle-grid">
+            <label className="inline-checkbox">
+              <input
+                type="checkbox"
+                checked={artSettings.legend.enabled}
+                onChange={(event) =>
+                  setArtSettings((current) => ({
+                    ...current,
+                    legend: { ...current.legend, enabled: event.target.checked },
+                  }))
+                }
+              />
+              legend title
+            </label>
 
-          <label className="inline-checkbox">
-            <input
-              type="checkbox"
-              checked={artSettings.legend.showSymbolMap}
-              onChange={(event) =>
-                setArtSettings((current) => ({
-                  ...current,
-                  legend: { ...current.legend, showSymbolMap: event.target.checked },
-                }))
-              }
-            />
-            Show symbol key in legend
-          </label>
+            <label className="inline-checkbox">
+              <input
+                type="checkbox"
+                checked={artSettings.legend.showTypeLength}
+                disabled={!showLegendTitle}
+                onChange={(event) =>
+                  setArtSettings((current) => ({
+                    ...current,
+                    legend: { ...current.legend, showTypeLength: event.target.checked },
+                  }))
+                }
+              />
+              type-length title
+            </label>
 
-          <label className="inline-checkbox">
-            <input
-              type="checkbox"
-              checked={artSettings.legend.showBorder}
-              disabled={!legendHasContent}
-              onChange={(event) =>
-                setArtSettings((current) => ({
-                  ...current,
-                  legend: { ...current.legend, showBorder: event.target.checked },
-                }))
-              }
-            />
-            Show legend border
-          </label>
+            <label className="inline-checkbox">
+              <input
+                type="checkbox"
+                checked={artSettings.legend.showSymbolMap}
+                onChange={(event) =>
+                  setArtSettings((current) => ({
+                    ...current,
+                    legend: { ...current.legend, showSymbolMap: event.target.checked },
+                  }))
+                }
+              />
+              symbol key
+            </label>
+
+            <label className="inline-checkbox">
+              <input
+                type="checkbox"
+                checked={artSettings.legend.showSymbolKeyTitle}
+                disabled={!showSymbolLegendInPreview}
+                onChange={(event) =>
+                  setArtSettings((current) => ({
+                    ...current,
+                    legend: { ...current.legend, showSymbolKeyTitle: event.target.checked },
+                  }))
+                }
+              />
+              symbol key title
+            </label>
+
+            <label className="inline-checkbox">
+              <input
+                type="checkbox"
+                checked={artSettings.legend.showBorder}
+                disabled={!legendHasContent}
+                onChange={(event) =>
+                  setArtSettings((current) => ({
+                    ...current,
+                    legend: { ...current.legend, showBorder: event.target.checked },
+                  }))
+                }
+              />
+              legend border
+            </label>
+          </div>
 
           <label className="stack">
             Legend position
@@ -1114,58 +1224,82 @@ function App() {
                   );
                 })}
               </div>
-              {artSettings.mode === 'glyph_grid' ? (
-                <>
-                  <label className="inline-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={artSettings.glyphLabels.enabled}
-                      onChange={(event) =>
-                        setArtSettings((current) => ({
-                          ...current,
-                          glyphLabels: { ...current.glyphLabels, enabled: event.target.checked },
-                        }))
-                      }
-                    />
-                    Show glyph labels in preview
-                  </label>
-                  <label className="stack">
-                    Glyph label size ({artSettings.glyphLabels.sizeScale.toFixed(2)})
-                    <input
-                      type="range"
-                      min={0.6}
-                      max={1.8}
-                      step={0.01}
-                      value={artSettings.glyphLabels.sizeScale}
-                      onChange={(event) =>
-                        setArtSettings((current) => ({
-                          ...current,
-                          glyphLabels: { ...current.glyphLabels, sizeScale: Number(event.target.value) },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="stack">
-                    Glyph label color
-                    <input
-                      type="color"
-                      value={artSettings.glyphLabels.color}
-                      onChange={(event) =>
-                        setArtSettings((current) => ({
-                          ...current,
-                          glyphLabels: { ...current.glyphLabels, color: event.target.value },
-                        }))
-                      }
-                      aria-label="Glyph label color"
-                    />
-                  </label>
-                </>
-              ) : (
-                <small>Glyph shape and label controls apply only to Glyph Grid mode.</small>
-              )}
+              {artSettings.mode !== 'glyph_grid' ? (
+                <small>Glyph shape controls apply only to Glyph Grid mode.</small>
+              ) : null}
             </>
           ) : (
             <small>Select Scheme preset to `Custom` to edit symbol colors in this mode.</small>
+          )}
+          {supportsGlyphLabelsInCurrentMode ? (
+            <>
+              <label className="inline-checkbox">
+                <input
+                  type="checkbox"
+                  checked={artSettings.glyphLabels.enabled}
+                  onChange={(event) =>
+                    setArtSettings((current) => ({
+                      ...current,
+                      glyphLabels: { ...current.glyphLabels, enabled: event.target.checked },
+                    }))
+                  }
+                />
+                Show glyph labels in preview
+              </label>
+              <label className="stack">
+                Glyph label size ({artSettings.glyphLabels.sizeScale.toFixed(2)})
+                <input
+                  type="range"
+                  min={0.6}
+                  max={1.8}
+                  step={0.01}
+                  value={artSettings.glyphLabels.sizeScale}
+                  onChange={(event) =>
+                    setArtSettings((current) => ({
+                      ...current,
+                      glyphLabels: { ...current.glyphLabels, sizeScale: Number(event.target.value) },
+                    }))
+                  }
+                />
+              </label>
+              <label className="stack">
+                Glyph label color
+                <input
+                  type="color"
+                  value={artSettings.glyphLabels.color}
+                  onChange={(event) =>
+                    setArtSettings((current) => ({
+                      ...current,
+                      glyphLabels: { ...current.glyphLabels, color: event.target.value },
+                    }))
+                  }
+                  aria-label="Glyph label color"
+                />
+              </label>
+              <label className="stack">
+                Glyph label font
+                <select
+                  value={artSettings.glyphLabels.fontFamily}
+                  onChange={(event) =>
+                    setArtSettings((current) => ({
+                      ...current,
+                      glyphLabels: {
+                        ...current.glyphLabels,
+                        fontFamily: event.target.value as ArtSettings['glyphLabels']['fontFamily'],
+                      },
+                    }))
+                  }
+                >
+                  {FONT_FAMILY_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : (
+            <small>Glyph label controls apply to Glyph Grid, Ribbon Stripes, Wang Tiles, Truchet Tiles, and Hex Weave Mosaic.</small>
           )}
         </section>
 
@@ -1180,8 +1314,9 @@ function App() {
               <option value="glyph_grid">Glyph Grid</option>
               <option value="ribbon_stripes">Ribbon Stripes</option>
               <option value="radial_bloom">Radial Bloom</option>
-              <option value="wang_maze">Maze Wang Tiles</option>
+              <option value="wang_maze">Wang Tiles</option>
               <option value="truchet_tiles">Truchet Tiles</option>
+              <option value="hex_weave">Hex Weave Mosaic</option>
             </select>
           </label>
 
@@ -1409,6 +1544,7 @@ function App() {
                 <svg
                   ref={svgRef}
                   viewBox={`0 0 ${layout.widthPx} ${layout.heightPx}`}
+                  data-art-mode={artSettings.mode}
                   role="img"
                   aria-label="Sequence art preview"
                   width="100%"
@@ -1486,72 +1622,79 @@ function App() {
                         ))}
                       </text>
 
-                      <text
-                        x={legendTextX}
-                        y={legendLayout.footerStartY}
-                        fill={legendTextColor}
-                        textAnchor={legendTextAnchor}
-                        fontFamily={legendFontCss}
-                        fontWeight={artSettings.legend.boldText ? 600 : 450}
-                        fontSize={legendLayout.footerFont}
-                      >
-                        {legendLayout.footerLines.map((line, index) => (
-                          <tspan
-                            x={legendTextX}
-                            dy={index === 0 ? 0 : `${1.2}em`}
-                            key={`footer-line-${line}-${index}`}
-                          >
-                            {line}
-                          </tspan>
-                        ))}
-                      </text>
+                      {showTypeLengthInLegend ? (
+                        <text
+                          x={legendTextX}
+                          y={legendLayout.footerStartY}
+                          fill={legendTextColor}
+                          textAnchor={legendTextAnchor}
+                          fontFamily={legendFontCss}
+                          fontWeight={artSettings.legend.boldText ? 600 : 450}
+                          fontSize={legendLayout.footerFont}
+                        >
+                          {legendLayout.footerLines.map((line, index) => (
+                            <tspan
+                              x={legendTextX}
+                              dy={index === 0 ? 0 : `${1.2}em`}
+                              key={`footer-line-${line}-${index}`}
+                            >
+                              {line}
+                            </tspan>
+                          ))}
+                        </text>
+                      ) : null}
                     </>
                   ) : null}
 
                     {legendLayout.symbolCols > 0 ? (
                       <>
-                        <text
-                          x={legendLayout.boxX + legendLayout.padding}
-                          y={legendLayout.symbolTitleY}
-                          fill={legendTextColor}
-                          fontFamily={legendFontCss}
-                          fontWeight={artSettings.legend.boldText ? 700 : 600}
-                          fontSize={Math.max(12, Math.round(legendLayout.subtitleFont * 0.94))}
-                        >
-                          {symbolLegendTitle(record.sequenceType, artSettings.mode)}
-                        </text>
+                        {showSymbolLegendTitleInPreview ? (
+                          <text
+                            x={legendLayout.boxX + legendLayout.padding}
+                            y={legendLayout.symbolTitleY}
+                            fill={legendTextColor}
+                            fontFamily={legendFontCss}
+                            fontWeight={artSettings.legend.boldText ? 700 : 600}
+                            fontSize={Math.max(12, Math.round(legendLayout.subtitleFont * 0.94))}
+                          >
+                            {symbolLegendTitle(record.sequenceType, artSettings.mode)}
+                          </text>
+                        ) : null}
 
-                        {activeSymbols.map((symbol, index) => {
-                          const style = getStyleForSequenceSymbol(symbol, activeSequenceType, artSettings);
-                          const legendColor =
-                            artSettings.mode === 'wang_maze'
-                              ? getWangSymbolColor(symbol, activeSequenceType, artSettings)
-                              : style.color;
+                        {legendEntries.map((entry, index) => {
                           const row = Math.floor(index / legendLayout.symbolCols);
                           const col = index % legendLayout.symbolCols;
 
                           const cellX = legendLayout.boxX + legendLayout.padding + col * legendLayout.symbolCellW;
                           const cellY = legendLayout.symbolGridTop + row * legendLayout.symbolCellH;
                           const shapeSize = Math.min(legendLayout.symbolCellH * 0.78, legendLayout.symbolCellW * 0.35);
+                          const label = entry.label;
+                          const symbolFont = Math.max(
+                            8,
+                            Math.min(
+                              Math.round(legendLayout.footerFont * 0.92),
+                              Math.round((legendLayout.symbolCellW * 0.52) / Math.max(1, label.length * 0.58)),
+                            ),
+                          );
 
                           return (
-                            <g key={`legend-symbol-${symbol}`}>
+                            <g key={`legend-symbol-${label}`}>
                               {renderLegendModeSymbol(
                                 artSettings.mode,
-                                style.shape,
+                                entry.shape,
                                 cellX + shapeSize * 0.62,
                                 cellY + legendLayout.symbolCellH * 0.5,
                                 shapeSize,
-                                legendColor,
+                                entry.color,
                               )}
                               <text
                                 x={cellX + shapeSize * 1.36}
                                 y={cellY + legendLayout.symbolCellH * 0.62}
                                 fill={legendTextColor}
                                 fontFamily="'IBM Plex Mono', monospace"
-                                fontSize={Math.max(10, Math.round(legendLayout.footerFont * 0.92))}
+                                fontSize={symbolFont}
                               >
-                                {symbol}
+                                {label}
                               </text>
                             </g>
                           );
@@ -1622,7 +1765,7 @@ function App() {
                           }))
                         }
                       >
-                        {LEGEND_FONT_OPTIONS.map((option) => (
+                        {FONT_FAMILY_OPTIONS.map((option) => (
                           <option key={option.id} value={option.id}>{option.label}</option>
                         ))}
                       </select>

@@ -18,6 +18,49 @@ export interface RadialBloomModel {
   totalLength: number;
 }
 
+function parseHexColor(text: string): { r: number; g: number; b: number } | null {
+  const value = text.trim().toLowerCase();
+  const hex = value.startsWith('#') ? value.slice(1) : value;
+  if (/^[0-9a-f]{3}$/.test(hex)) {
+    return {
+      r: parseInt(`${hex[0]}${hex[0]}`, 16),
+      g: parseInt(`${hex[1]}${hex[1]}`, 16),
+      b: parseInt(`${hex[2]}${hex[2]}`, 16),
+    };
+  }
+  if (/^[0-9a-f]{6}$/.test(hex)) {
+    return {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+    };
+  }
+  return null;
+}
+
+function toHexColor(r: number, g: number, b: number): string {
+  const clampByte = (value: number) => clamp(Math.round(value), 0, 255);
+  return `#${
+    [clampByte(r), clampByte(g), clampByte(b)]
+      .map((value) => value.toString(16).padStart(2, '0'))
+      .join('')
+  }`;
+}
+
+function blendHexColors(base: string, target: string, ratio: number): string {
+  const baseRgb = parseHexColor(base);
+  const targetRgb = parseHexColor(target);
+  if (!baseRgb || !targetRgb) {
+    return base;
+  }
+  const mix = clamp(ratio, 0, 1);
+  return toHexColor(
+    baseRgb.r * (1 - mix) + targetRgb.r * mix,
+    baseRgb.g * (1 - mix) + targetRgb.g * mix,
+    baseRgb.b * (1 - mix) + targetRgb.b * mix,
+  );
+}
+
 function polar(cx: number, cy: number, radius: number, angle: number): { x: number; y: number } {
   return {
     x: cx + Math.cos(angle) * radius,
@@ -48,6 +91,8 @@ export function buildRadialBloomModel(
   settings: ArtSettings,
   sequenceType: SequenceType,
 ): RadialBloomModel {
+  const spacing = clamp(settings.spacing, 0.55, 1.7);
+  const spacingRatio = clamp((spacing - 0.55) / 1.15, 0, 1);
   const maxWedges = Math.round(3000 + settings.density * 6000);
   const { sampled, step } = sampleSequence(sequence, maxWedges);
   const totalLength = sequence.length;
@@ -63,6 +108,10 @@ export function buildRadialBloomModel(
   const rings = Math.ceil(sampled.length / spokes);
   const ringGap = maxRadius / (rings + 1.25);
   const baseInner = ringGap * 0.22;
+  const angularStep = (Math.PI * 2) / spokes;
+  const angularCoverage = 1.06 - spacingRatio * 0.34;
+  const jitterScale = angularStep * (0.02 + spacingRatio * 0.38);
+  const radialCoverage = 1.04 + (1 - spacingRatio) * 0.14 + (settings.scale - 1) * 0.12;
 
   const wedges: BloomWedge[] = [];
 
@@ -72,22 +121,29 @@ export function buildRadialBloomModel(
     const spoke = i % spokes;
     const hash = residueHash(i, residue, 'bloom');
 
-    const centerAngle = (Math.PI * 2 * spoke) / spokes + (ring % 2 === 0 ? 0 : Math.PI / spokes);
-    const jitter = (((hash >>> 4) % 1000) / 1000 - 0.5) * (Math.PI / spokes) * 0.6;
-    const span = (Math.PI * 2) / spokes * (0.74 + settings.spacing * 0.2);
+    const swirl = ring * angularStep * (0.08 + (1 - spacingRatio) * 0.06);
+    const centerAngle = (Math.PI * 2 * spoke) / spokes + (ring % 2 === 0 ? 0 : Math.PI / spokes) + swirl;
+    const jitter = (((hash >>> 4) % 1000) / 1000 - 0.5) * jitterScale;
+    const span = angularStep * angularCoverage;
     const startA = centerAngle + jitter - span * 0.5;
     const endA = centerAngle + jitter + span * 0.5;
 
     const innerR = baseInner + ring * ringGap;
-    const outerR = Math.min(maxRadius, innerR + ringGap * (0.88 + settings.scale * 0.22));
+    const outerR = Math.min(maxRadius, innerR + ringGap * radialCoverage);
 
-    const opacity = clamp(0.5 + ((hash >>> 13) % 100) / 190, 0.44, 0.96);
+    const baseColor = getStyleForSequenceSymbol(residue, sequenceType, settings).color;
+    const toneRatio = ((hash >>> 11) % 100) / 100;
+    const color = toneRatio > 0.52
+      ? blendHexColors(baseColor, '#ffffff', 0.06 + ((hash >>> 16) % 20) / 500)
+      : blendHexColors(baseColor, '#0f1722', 0.05 + ((hash >>> 18) % 24) / 520);
+    const opacityBoost = (1 - spacingRatio) * 0.24;
+    const opacity = clamp(0.58 + ((hash >>> 13) % 100) / 260 + opacityBoost, 0.56, 0.98);
 
     wedges.push({
       index: i * step,
       residue,
       path: wedgePath(cx, cy, innerR, outerR, startA, endA),
-      color: getStyleForSequenceSymbol(residue, sequenceType, settings).color,
+      color,
       opacity,
     });
   }
@@ -107,8 +163,10 @@ export function renderRadialBloom(model: RadialBloomModel): ReactNode[] {
       d={wedge.path}
       fill={wedge.color}
       fillOpacity={wedge.opacity}
-      stroke="rgba(5, 8, 12, 0.08)"
-      strokeWidth={0.65}
+      stroke={wedge.color}
+      strokeOpacity={Math.min(1, wedge.opacity * 0.94)}
+      strokeWidth={0.42}
+      strokeLinejoin="round"
     />
   ));
 }

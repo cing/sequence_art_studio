@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { resolveFontFamily } from '../lib/font-family';
 import { clamp, residueHash, sampleSequence } from '../lib/utils';
 import { getStyleForSequenceSymbol } from '../lib/style-map';
 import type { ArtSettings, Rect, SequenceType } from '../types';
@@ -83,10 +84,14 @@ export function buildRibbonModel(
   };
 }
 
-export function renderRibbonModel(model: RibbonModel, rect: Rect, clipId: string): ReactNode {
+export function renderRibbonModel(model: RibbonModel, rect: Rect, clipId: string, settings: ArtSettings): ReactNode {
   if (!model.segments.length) {
     return null;
   }
+
+  const showGlyphText = settings.glyphLabels.enabled;
+  const labelSizeScale = clamp(settings.glyphLabels.sizeScale, 0.5, 2.2);
+  const labelFont = resolveFontFamily(settings.glyphLabels.fontFamily);
 
   return (
     <>
@@ -99,20 +104,41 @@ export function renderRibbonModel(model: RibbonModel, rect: Rect, clipId: string
         {model.segments.map((segment) => {
           const cx = segment.x + segment.width * 0.5;
           const cy = segment.y + segment.height * 0.5;
+          const labelSize = clamp(
+            Math.min(segment.width * 0.46, segment.height * 0.84) * labelSizeScale,
+            4,
+            28,
+          );
           return (
-            <rect
-              key={`ribbon-${segment.index}`}
-              x={segment.x}
-              y={segment.y}
-              width={segment.width}
-              height={segment.height}
-              rx={segment.radius}
-              fill={segment.color}
-              fillOpacity={segment.opacity}
-              stroke="rgba(9, 10, 14, 0.10)"
-              strokeWidth={Math.max(0.3, segment.height * 0.045)}
-              transform={`rotate(${segment.rotation} ${cx} ${cy})`}
-            />
+            <g key={`ribbon-${segment.index}`} transform={`rotate(${segment.rotation} ${cx} ${cy})`}>
+              <rect
+                x={segment.x}
+                y={segment.y}
+                width={segment.width}
+                height={segment.height}
+                rx={segment.radius}
+                fill={segment.color}
+                fillOpacity={segment.opacity}
+                stroke="rgba(9, 10, 14, 0.10)"
+                strokeWidth={Math.max(0.3, segment.height * 0.045)}
+              />
+              {showGlyphText && segment.width > 6 && segment.height > 6 ? (
+                <text
+                  x={cx}
+                  y={cy + labelSize * 0.32}
+                  textAnchor="middle"
+                  fontSize={labelSize}
+                  fill={settings.glyphLabels.color}
+                  stroke="rgba(255, 255, 255, 0.78)"
+                  strokeWidth={Math.max(0.45, labelSize * 0.09)}
+                  paintOrder="stroke fill"
+                  fontFamily={labelFont}
+                  pointerEvents="none"
+                >
+                  {segment.residue.toUpperCase()}
+                </text>
+              ) : null}
+            </g>
           );
         })}
       </g>

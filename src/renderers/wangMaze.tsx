@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { AMINO_ACIDS_20 } from '../lib/aa-map';
 import { DNA_SYMBOLS } from '../lib/dna-map';
+import { resolveFontFamily } from '../lib/font-family';
 import { getStyleForSequenceSymbol } from '../lib/style-map';
 import { clamp, residueHash, sampleSequence } from '../lib/utils';
 import type { ArtSettings, Rect, SequenceType } from '../types';
@@ -63,6 +64,13 @@ function parseHexColor(text: string): { r: number; g: number; b: number } | null
   return null;
 }
 
+function toHexColor(r: number, g: number, b: number): string {
+  const rc = Math.round(clamp(r, 0, 255)).toString(16).padStart(2, '0');
+  const gc = Math.round(clamp(g, 0, 255)).toString(16).padStart(2, '0');
+  const bc = Math.round(clamp(b, 0, 255)).toString(16).padStart(2, '0');
+  return `#${rc}${gc}${bc}`;
+}
+
 function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
   const rn = r / 255;
   const gn = g / 255;
@@ -87,31 +95,62 @@ function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: n
   return { h, s: s * 100, l: l * 100 };
 }
 
-function toHslCss(h: number, s: number, l: number): string {
-  return `hsl(${h.toFixed(1)} ${s.toFixed(1)}% ${l.toFixed(1)}%)`;
-}
+function hslToRgb(h: number, sPercent: number, lPercent: number): { r: number; g: number; b: number } {
+  const hNorm = ((h % 360) + 360) % 360;
+  const s = clamp(sPercent, 0, 100) / 100;
+  const l = clamp(lPercent, 0, 100) / 100;
 
-function parseHslCss(text: string): { h: number; s: number; l: number } | null {
-  const match = text.match(/^hsl\(([-\d.]+)\s+([-\d.]+)%\s+([-\d.]+)%\)$/);
-  if (!match) {
-    return null;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const hp = hNorm / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+
+  let r1 = 0;
+  let g1 = 0;
+  let b1 = 0;
+
+  if (hp >= 0 && hp < 1) {
+    r1 = c;
+    g1 = x;
+  } else if (hp >= 1 && hp < 2) {
+    r1 = x;
+    g1 = c;
+  } else if (hp >= 2 && hp < 3) {
+    g1 = c;
+    b1 = x;
+  } else if (hp >= 3 && hp < 4) {
+    g1 = x;
+    b1 = c;
+  } else if (hp >= 4 && hp < 5) {
+    r1 = x;
+    b1 = c;
+  } else {
+    r1 = c;
+    b1 = x;
   }
+
+  const m = l - c * 0.5;
   return {
-    h: Number(match[1]),
-    s: Number(match[2]),
-    l: Number(match[3]),
+    r: (r1 + m) * 255,
+    g: (g1 + m) * 255,
+    b: (b1 + m) * 255,
   };
 }
 
-function shiftedHsl(text: string, hueShift: number, lightnessShift: number): string {
-  const parsed = parseHslCss(text);
+function hslToHex(h: number, s: number, l: number): string {
+  const rgb = hslToRgb(h, s, l);
+  return toHexColor(rgb.r, rgb.g, rgb.b);
+}
+
+function shiftedHex(text: string, hueShift: number, lightnessShift: number): string {
+  const parsed = parseHexColor(text);
   if (!parsed) {
     return text;
   }
-  const h = (parsed.h + hueShift + 360) % 360;
-  const s = clamp(parsed.s, 48, 82);
-  const l = clamp(parsed.l + lightnessShift, 34, 72);
-  return toHslCss(h, s, l);
+  const base = rgbToHsl(parsed.r, parsed.g, parsed.b);
+  const h = (base.h + hueShift + 360) % 360;
+  const s = clamp(base.s, 48, 82);
+  const l = clamp(base.l + lightnessShift, 34, 72);
+  return hslToHex(h, s, l);
 }
 
 export function getWangSymbolColor(symbol: string, sequenceType: SequenceType, settings: ArtSettings): string {
@@ -135,7 +174,7 @@ export function getWangSymbolColor(symbol: string, sequenceType: SequenceType, s
   const hue = (base.h * 0.62 + uniqueHue * 0.38 + 360) % 360;
   const saturation = clamp(base.s * 0.82 + 10, 50, 84);
   const lightness = clamp(base.l * 0.78 + 11, 36, 68);
-  return toHslCss(hue, saturation, lightness);
+  return hslToHex(hue, saturation, lightness);
 }
 
 function buildEdgePalette(sequenceType: SequenceType, settings: ArtSettings): string[] {
@@ -152,12 +191,12 @@ function buildEdgePalette(sequenceType: SequenceType, settings: ArtSettings): st
     ];
   }
 
-  const seed = unique[0] ?? toHslCss(sequenceType === 'protein' ? 196 : 172, 68, 54);
+  const seed = unique[0] ?? hslToHex(sequenceType === 'protein' ? 196 : 172, 68, 54);
   const palette = [seed];
   while (palette.length < 4) {
     const shift = palette.length * 88;
     const lightnessShift = palette.length % 2 === 0 ? -8 : 8;
-    palette.push(shiftedHsl(seed, shift, lightnessShift));
+    palette.push(shiftedHex(seed, shift, lightnessShift));
   }
   return palette;
 }
@@ -315,12 +354,15 @@ export function buildWangMazeModel(
   };
 }
 
-export function renderWangMaze(model: WangMazeModel): ReactNode[] {
+export function renderWangMaze(model: WangMazeModel, settings: ArtSettings): ReactNode[] {
   if (!model.tiles.length) {
     return [];
   }
 
   const palette = model.edgePalette.length > 0 ? model.edgePalette : ['#3563ff', '#f05454', '#46c86f', '#f2f2f2'];
+  const showGlyphText = settings.glyphLabels.enabled;
+  const labelSizeScale = clamp(settings.glyphLabels.sizeScale, 0.5, 2.2);
+  const labelFont = resolveFontFamily(settings.glyphLabels.fontFamily);
 
   return [
     (
@@ -328,7 +370,6 @@ export function renderWangMaze(model: WangMazeModel): ReactNode[] {
         {model.tiles.map((tile) => {
           const cx = tile.x + tile.size * 0.5;
           const cy = tile.y + tile.size * 0.5;
-          const centerRadius = tile.size * 0.16;
           const nColor = palette[tile.edgeCodes.n % palette.length];
           const eColor = palette[tile.edgeCodes.e % palette.length];
           const sColor = palette[tile.edgeCodes.s % palette.length];
@@ -364,11 +405,22 @@ export function renderWangMaze(model: WangMazeModel): ReactNode[] {
                 fill={wColor}
                 fillOpacity={0.95}
               />
-              <polygon
-                points={`${cx.toFixed(3)},${(cy - centerRadius).toFixed(3)} ${(cx + centerRadius).toFixed(3)},${cy.toFixed(3)} ${cx.toFixed(3)},${(cy + centerRadius).toFixed(3)} ${(cx - centerRadius).toFixed(3)},${cy.toFixed(3)}`}
-                fill={tile.baseColor}
-                fillOpacity={0.84}
-              />
+              {showGlyphText && tile.size > 8 ? (
+                <text
+                  x={cx}
+                  y={cy + tile.size * 0.14}
+                  textAnchor="middle"
+                  fontSize={Math.max(5, tile.size * 0.34 * labelSizeScale)}
+                  fill={settings.glyphLabels.color}
+                  stroke="rgba(255, 255, 255, 0.78)"
+                  strokeWidth={Math.max(0.45, tile.size * 0.055 * labelSizeScale)}
+                  paintOrder="stroke fill"
+                  fontFamily={labelFont}
+                  pointerEvents="none"
+                >
+                  {tile.residue.toUpperCase()}
+                </text>
+              ) : null}
             </g>
           );
         })}

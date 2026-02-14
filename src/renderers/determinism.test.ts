@@ -3,6 +3,7 @@ import type { ArtSettings } from '../types';
 import { buildProteinStyleMapFromScheme } from '../lib/aa-map';
 import { buildDnaStyleMapFromScheme } from '../lib/dna-map';
 import { buildGlyphGridModel } from './glyphGrid';
+import { buildHexWeaveModel } from './hexWeave';
 import { buildRibbonModel } from './ribbonStripes';
 import { buildRadialBloomModel } from './radialBloom';
 import { buildTruchetModel } from './truchetTiles';
@@ -24,11 +25,14 @@ const settings: ArtSettings = {
     enabled: true,
     color: '#21303a',
     sizeScale: 1,
+    fontFamily: 'ibm_plex_mono',
   },
   legend: {
     enabled: true,
     position: 'bottom',
     showSymbolMap: true,
+    showTypeLength: true,
+    showSymbolKeyTitle: true,
     showBorder: true,
     fontScale: 1,
     paddingScale: 1,
@@ -82,6 +86,12 @@ describe('renderer determinism', () => {
     expect(modelA).toEqual(modelB);
   });
 
+  it('hex weave output is stable', () => {
+    const modelA = buildHexWeaveModel(proteinSequence, rect, { ...settings, mode: 'hex_weave' }, 'protein');
+    const modelB = buildHexWeaveModel(proteinSequence, rect, { ...settings, mode: 'hex_weave' }, 'protein');
+    expect(modelA).toEqual(modelB);
+  });
+
   it('wang maze colors change with scheme presets', () => {
     const schemeA = {
       ...settings,
@@ -118,6 +128,25 @@ describe('renderer determinism', () => {
     const modelA = buildTruchetModel('AAAAAAAAAAAAAAAAAAAA', rect, schemeA, 'protein');
     const modelB = buildTruchetModel('AAAAAAAAAAAAAAAAAAAA', rect, schemeB, 'protein');
     expect(modelA.tiles[0]?.primaryColor).not.toEqual(modelB.tiles[0]?.primaryColor);
+  });
+
+  it('hex weave colors change with scheme presets', () => {
+    const schemeA = {
+      ...settings,
+      mode: 'hex_weave' as const,
+      proteinSchemeId: 'protein_physicochemical_7',
+      proteinResidueStyles: buildProteinStyleMapFromScheme('protein_physicochemical_7'),
+    };
+    const schemeB = {
+      ...settings,
+      mode: 'hex_weave' as const,
+      proteinSchemeId: 'protein_gallery_20',
+      proteinResidueStyles: buildProteinStyleMapFromScheme('protein_gallery_20'),
+    };
+
+    const modelA = buildHexWeaveModel('AAAAAAAAAAAAAAAAAAAA', rect, schemeA, 'protein');
+    const modelB = buildHexWeaveModel('AAAAAAAAAAAAAAAAAAAA', rect, schemeB, 'protein');
+    expect(modelA.cells[0]?.fillColor).not.toEqual(modelB.cells[0]?.fillColor);
   });
 
   it('glyph grid spacing changes occupancy', () => {

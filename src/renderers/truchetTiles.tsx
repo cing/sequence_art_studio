@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { resolveFontFamily } from '../lib/font-family';
 import { clamp, residueHash, sampleSequence } from '../lib/utils';
 import { getStyleForSequenceSymbol } from '../lib/style-map';
 import type { ArtSettings, Rect, SequenceType } from '../types';
@@ -152,10 +153,14 @@ export function buildTruchetModel(
   };
 }
 
-export function renderTruchetModel(model: TruchetModel): ReactNode[] {
+export function renderTruchetModel(model: TruchetModel, settings: ArtSettings): ReactNode[] {
   if (!model.tiles.length) {
     return [];
   }
+
+  const showGlyphText = settings.glyphLabels.enabled;
+  const labelSizeScale = clamp(settings.glyphLabels.sizeScale, 0.5, 2.2);
+  const labelFont = resolveFontFamily(settings.glyphLabels.fontFamily);
 
   return [
     (
@@ -182,6 +187,22 @@ export function renderTruchetModel(model: TruchetModel): ReactNode[] {
                 strokeOpacity={0.18}
                 strokeWidth={Math.max(0.25, tile.size * 0.025)}
               />
+              {showGlyphText && tile.size > 8 ? (
+                <text
+                  x={tile.x + tile.size * 0.5}
+                  y={tile.y + tile.size * 0.62}
+                  textAnchor="middle"
+                  fontSize={Math.max(5, tile.size * 0.34 * labelSizeScale)}
+                  fill={settings.glyphLabels.color}
+                  stroke="rgba(255, 255, 255, 0.78)"
+                  strokeWidth={Math.max(0.45, tile.size * 0.055 * labelSizeScale)}
+                  paintOrder="stroke fill"
+                  fontFamily={labelFont}
+                  pointerEvents="none"
+                >
+                  {tile.residue.toUpperCase()}
+                </text>
+              ) : null}
             </g>
           );
         })}
