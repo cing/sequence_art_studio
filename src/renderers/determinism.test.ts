@@ -22,6 +22,11 @@ const settings: ArtSettings = {
     terrainCap: 6,
     lockSymbolTiles: true,
   },
+  truchet: {
+    variant: 'diagonal',
+    tileOverrides: {},
+    whiteBackground: false,
+  },
   showArtBorder: true,
   scale: 1,
   spacing: 1,

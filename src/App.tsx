@@ -21,6 +21,7 @@ import {
   getWangCornerMaskPolygons,
   resolveWangTerrainStates,
 } from './renderers/wangMaze';
+import { getTileTypesForVariant, TILE_TYPE_LABELS } from './renderers/truchetTiles';
 import type {
   ArtMode,
   ArtSettings,
@@ -31,6 +32,7 @@ import type {
   SequenceType,
   ResidueStyle,
   ShapeKind,
+  TruchetTileType,
 } from './types';
 
 interface MetadataFields {
@@ -69,6 +71,7 @@ interface LegendEntry {
   wangStateIndex?: number;
   wangSecondaryStateIndex?: number;
   wangMaskId?: number;
+  truchetTileType?: TruchetTileType;
 }
 
 const DEFAULT_PROTEIN_SCHEME_ID = PROTEIN_STYLE_SCHEMES[0].id;
@@ -105,6 +108,11 @@ function createDefaultArtSettings(): ArtSettings {
       variant: 'corner_sv2',
       terrainCap: 20,
       lockSymbolTiles: true,
+    },
+    truchet: {
+      variant: 'diagonal',
+      tileOverrides: {},
+      whiteBackground: false,
     },
     showArtBorder: true,
     scale: 1,
@@ -266,6 +274,10 @@ function renderLegendModeSymbol(
     secondaryColor?: string;
     maskId?: number;
   },
+  truchetOptions?: {
+    variant: ArtSettings['truchet']['variant'];
+    tileType: TruchetTileType;
+  },
 ): JSX.Element {
   const stroke = 'rgba(8, 15, 20, 0.16)';
   const tileSize = size * 0.9;
@@ -398,16 +410,193 @@ function renderLegendModeSymbol(
     );
   }
 
-  const diagonalPoints = `${left.toFixed(3)},${top.toFixed(3)} ${right.toFixed(3)},${top.toFixed(3)} ${left.toFixed(3)},${bottom.toFixed(3)}`;
+  // Truchet tile legend symbols — render based on variant and per-symbol tile override.
+  const truchetVariant = truchetOptions?.variant;
+  const truchetTile = truchetOptions?.tileType ?? 'any';
+
+  if (truchetVariant === 'quarter_arcs') {
+    const r = tileSize * 0.5;
+    const midT = { x, y: top };
+    const midB = { x, y: bottom };
+    const midL = { x: left, y: top + r };
+    const midR = { x: right, y: top + r };
+    const cornerTL = { x: left, y: top };
+    const cornerBR = { x: right, y: bottom };
+    const cornerTR = { x: right, y: top };
+    const cornerBL = { x: left, y: bottom };
+
+    const f = (n: number) => n.toFixed(3);
+    const leafA1 = `M ${f(cornerTL.x)} ${f(cornerTL.y)} L ${f(midT.x)} ${f(midT.y)} A ${f(r)} ${f(r)} 0 0 0 ${f(midL.x)} ${f(midL.y)} Z`;
+    const leafA2 = `M ${f(cornerBR.x)} ${f(cornerBR.y)} L ${f(midB.x)} ${f(midB.y)} A ${f(r)} ${f(r)} 0 0 0 ${f(midR.x)} ${f(midR.y)} Z`;
+    const leafB1 = `M ${f(cornerTR.x)} ${f(cornerTR.y)} L ${f(midT.x)} ${f(midT.y)} A ${f(r)} ${f(r)} 0 0 1 ${f(midR.x)} ${f(midR.y)} Z`;
+    const leafB2 = `M ${f(cornerBL.x)} ${f(cornerBL.y)} L ${f(midB.x)} ${f(midB.y)} A ${f(r)} ${f(r)} 0 0 1 ${f(midL.x)} ${f(midL.y)} Z`;
+
+    const showA = truchetTile === 'any' || truchetTile === 'arc_a';
+    const showB = truchetTile === 'any' || truchetTile === 'arc_b';
+
+    const leaves: JSX.Element[] = [];
+    if (showA) {
+      leaves.push(
+        <path key="a1" d={leafA1} fill={color} />,
+        <path key="a2" d={leafA2} fill={color} />,
+      );
+    }
+    if (showB) {
+      leaves.push(
+        <path key="b1" d={leafB1} fill={color} fillOpacity={truchetTile === 'any' ? 0.4 : 1} />,
+        <path key="b2" d={leafB2} fill={color} fillOpacity={truchetTile === 'any' ? 0.4 : 1} />,
+      );
+    }
+
+    return (
+      <g>
+        <rect x={left} y={top} width={tileSize} height={tileSize} fill="white" stroke={stroke} strokeWidth={Math.max(0.7, size * 0.06)} />
+        {leaves}
+      </g>
+    );
+  }
+
+  if (truchetVariant === 'quarter_arc_strokes') {
+    const r = tileSize * 0.5;
+    const midT = { x, y: top };
+    const midB = { x, y: bottom };
+    const midL = { x: left, y: top + r };
+    const midR = { x: right, y: top + r };
+
+    const f = (n: number) => n.toFixed(3);
+    const sw = Math.max(1.5, tileSize * 0.14);
+    const showA = truchetTile === 'any' || truchetTile === 'arc_a';
+    const showB = truchetTile === 'any' || truchetTile === 'arc_b';
+
+    const arcs: JSX.Element[] = [];
+    if (showA) {
+      arcs.push(
+        <path key="a1" d={`M ${f(midT.x)} ${f(midT.y)} A ${f(r)} ${f(r)} 0 0 0 ${f(midL.x)} ${f(midL.y)}`} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="butt" />,
+        <path key="a2" d={`M ${f(midB.x)} ${f(midB.y)} A ${f(r)} ${f(r)} 0 0 0 ${f(midR.x)} ${f(midR.y)}`} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="butt" />,
+      );
+    }
+    if (showB) {
+      arcs.push(
+        <path key="b1" d={`M ${f(midT.x)} ${f(midT.y)} A ${f(r)} ${f(r)} 0 0 1 ${f(midR.x)} ${f(midR.y)}`} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="butt" strokeOpacity={truchetTile === 'any' ? 0.4 : 1} />,
+        <path key="b2" d={`M ${f(midB.x)} ${f(midB.y)} A ${f(r)} ${f(r)} 0 0 1 ${f(midL.x)} ${f(midL.y)}`} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="butt" strokeOpacity={truchetTile === 'any' ? 0.4 : 1} />,
+      );
+    }
+
+    return (
+      <g>
+        <rect x={left} y={top} width={tileSize} height={tileSize} fill="white" stroke={stroke} strokeWidth={Math.max(0.7, size * 0.06)} />
+        {arcs}
+      </g>
+    );
+  }
+
+  if (truchetVariant === 'colored_arcs') {
+    const r = tileSize * 0.5;
+    type CornerDef = { cx: number; cy: number; lx: number; ly: number; ax: number; ay: number; sweep: 0 | 1 };
+    const corners: Record<string, [CornerDef, CornerDef]> = {
+      rot_0: [
+        { cx: left, cy: top, lx: left + r, ly: top, ax: left, ay: top + r, sweep: 1 },
+        { cx: right, cy: bottom, lx: right - r, ly: bottom, ax: right, ay: bottom - r, sweep: 1 },
+      ],
+      rot_90: [
+        { cx: right, cy: top, lx: right, ly: top + r, ax: right - r, ay: top, sweep: 1 },
+        { cx: left, cy: bottom, lx: left, ly: bottom - r, ax: left + r, ay: bottom, sweep: 1 },
+      ],
+      rot_180: [
+        { cx: right, cy: bottom, lx: right, ly: bottom - r, ax: right - r, ay: bottom, sweep: 0 },
+        { cx: left, cy: top, lx: left, ly: top + r, ax: left + r, ay: top, sweep: 0 },
+      ],
+      rot_270: [
+        { cx: left, cy: bottom, lx: left + r, ly: bottom, ax: left, ay: bottom - r, sweep: 0 },
+        { cx: right, cy: top, lx: right - r, ly: top, ax: right, ay: top + r, sweep: 0 },
+      ],
+    };
+
+    const rotKeys = truchetTile === 'any' ? ['rot_0'] : [truchetTile];
+    const wedges: JSX.Element[] = [];
+    for (const rk of rotKeys) {
+      const pair = corners[rk];
+      if (!pair) continue;
+      for (let ci = 0; ci < pair.length; ci++) {
+        const c = pair[ci];
+        wedges.push(
+          <path
+            key={`${rk}-${ci}`}
+            d={`M ${c.cx.toFixed(3)} ${c.cy.toFixed(3)} L ${c.lx.toFixed(3)} ${c.ly.toFixed(3)} A ${r.toFixed(3)} ${r.toFixed(3)} 0 0 ${c.sweep} ${c.ax.toFixed(3)} ${c.ay.toFixed(3)} Z`}
+            fill={color}
+          />,
+        );
+      }
+    }
+
+    return (
+      <g>
+        <rect x={left} y={top} width={tileSize} height={tileSize} fill={color} fillOpacity={0.15} stroke={stroke} strokeWidth={Math.max(0.7, size * 0.06)} />
+        {wedges}
+      </g>
+    );
+  }
+
+  if (truchetVariant === 'diagonal_maze') {
+    const sw = Math.max(1.5, tileSize * 0.14);
+    const showA = truchetTile === 'any' || truchetTile === 'line_a';
+    const showB = truchetTile === 'any' || truchetTile === 'line_b';
+
+    const lines: JSX.Element[] = [];
+    if (showA) {
+      lines.push(
+        <line key="a" x1={left} y1={top} x2={right} y2={bottom}
+          stroke={color} strokeWidth={sw} strokeLinecap="butt" />,
+      );
+    }
+    if (showB) {
+      lines.push(
+        <line key="b" x1={right} y1={top} x2={left} y2={bottom}
+          stroke={color} strokeWidth={sw} strokeLinecap="butt"
+          strokeOpacity={truchetTile === 'any' ? 0.4 : 1} />,
+      );
+    }
+
+    return (
+      <g>
+        <rect x={left} y={top} width={tileSize} height={tileSize} fill="white" stroke={stroke} strokeWidth={Math.max(0.7, size * 0.06)} />
+        {lines}
+      </g>
+    );
+  }
+
+  // Diagonal variant — render the specific tile orientation.
+  // TL/BR use ╲ split, TR/BL use ╱ split. The named half is colored.
+  const TL = `${left.toFixed(3)},${top.toFixed(3)}`;
+  const TR = `${right.toFixed(3)},${top.toFixed(3)}`;
+  const BL = `${left.toFixed(3)},${bottom.toFixed(3)}`;
+  const BR = `${right.toFixed(3)},${bottom.toFixed(3)}`;
+
+  const tile = truchetTile === 'any' ? 'diag_tl' : truchetTile;
+  const isBackslash = tile === 'diag_tl' || tile === 'diag_br';
+
+  let coloredTriangle: string;
+  switch (tile) {
+    case 'diag_tl': coloredTriangle = `${TL} ${TR} ${BL}`; break;
+    case 'diag_br': coloredTriangle = `${TR} ${BR} ${BL}`; break;
+    case 'diag_tr': coloredTriangle = `${TL} ${TR} ${BR}`; break;
+    case 'diag_bl': coloredTriangle = `${TL} ${BL} ${BR}`; break;
+    default:        coloredTriangle = `${TL} ${TR} ${BL}`; break;
+  }
+
+  const lineX1 = isBackslash ? left : right;
+  const lineY1 = isBackslash ? top : top;
+  const lineX2 = isBackslash ? right : left;
+  const lineY2 = bottom;
   return (
     <g>
-      <rect x={left} y={top} width={tileSize} height={tileSize} fill={color} stroke={stroke} strokeWidth={Math.max(0.7, size * 0.06)} />
-      <polygon points={diagonalPoints} fill="white" fillOpacity={0.58} />
+      <rect x={left} y={top} width={tileSize} height={tileSize} fill="white" stroke={stroke} strokeWidth={Math.max(0.7, size * 0.06)} />
+      <polygon points={coloredTriangle} fill={color} />
       <line
-        x1={left}
-        y1={bottom}
-        x2={right}
-        y2={top}
+        x1={lineX1}
+        y1={lineY1}
+        x2={lineX2}
+        y2={lineY2}
         stroke="rgba(8, 15, 20, 0.22)"
         strokeWidth={Math.max(0.65, size * 0.055)}
       />
@@ -564,21 +753,28 @@ function App() {
     }
 
     const grouped: LegendEntry[] = [];
-    const colorKeyToIndex = new Map<string, number>();
+    const keyToIndex = new Map<string, number>();
+    const isTruchet = artSettings.mode === 'truchet_tiles';
 
     for (const symbol of activeSymbols) {
       const style = getStyleForSequenceSymbol(symbol, activeSequenceType, artSettings);
       const color = style.color;
       const colorKey = color.trim().toLowerCase();
-      const existingIndex = colorKeyToIndex.get(colorKey);
+      const tileType: TruchetTileType = isTruchet
+        ? (artSettings.truchet.tileOverrides[symbol] ?? 'any')
+        : 'any';
+      // In truchet mode, symbols with different tile overrides get separate entries.
+      const groupKey = isTruchet ? `${colorKey}|${tileType}` : colorKey;
+      const existingIndex = keyToIndex.get(groupKey);
 
       if (existingIndex === undefined) {
-        colorKeyToIndex.set(colorKey, grouped.length);
+        keyToIndex.set(groupKey, grouped.length);
         grouped.push({
           color,
           shape: style.shape,
           symbols: [symbol],
           label: symbol,
+          truchetTileType: isTruchet ? tileType : undefined,
         });
         continue;
       }
@@ -1370,6 +1566,9 @@ function App() {
                   ))
                   : activeSymbols.map((symbol) => {
                     const style = getStyleForSequenceSymbol(symbol, activeSequenceType, artSettings);
+                    const isTruchet = artSettings.mode === 'truchet_tiles';
+                    const truchetTileTypes = isTruchet ? getTileTypesForVariant(artSettings.truchet.variant) : [];
+                    const currentTileType: TruchetTileType = artSettings.truchet.tileOverrides[symbol] ?? 'any';
                     return (
                       <div className="aa-style-row" key={symbol}>
                         <span className="aa-token">{symbol}</span>
@@ -1380,19 +1579,48 @@ function App() {
                           onChange={(event) => updateSymbolStyle(symbol, { color: event.target.value })}
                           aria-label={`${symbol} color`}
                         />
-                        <select
-                          className="glyph-shape-select"
-                          value={style.shape}
-                          disabled={artSettings.mode !== 'glyph_grid'}
-                          onChange={(event) => updateSymbolStyle(symbol, { shape: event.target.value as ShapeKind })}
-                          aria-label={`${symbol} glyph`}
-                        >
-                          {GLYPH_SHAPES.map((shape) => (
-                            <option value={shape} key={shape} title={SHAPE_LABELS[shape]}>
-                              {SHAPE_SYMBOLS[shape]}
-                            </option>
-                          ))}
-                        </select>
+                        {isTruchet ? (
+                          <select
+                            className="glyph-shape-select"
+                            value={currentTileType}
+                            onChange={(event) => {
+                              const value = event.target.value as TruchetTileType;
+                              setArtSettings((current) => {
+                                const next = { ...current.truchet.tileOverrides };
+                                if (value === 'any') {
+                                  delete next[symbol];
+                                } else {
+                                  next[symbol] = value;
+                                }
+                                return {
+                                  ...current,
+                                  truchet: { ...current.truchet, tileOverrides: next },
+                                };
+                              });
+                            }}
+                            aria-label={`${symbol} tile type`}
+                          >
+                            {truchetTileTypes.map((tt) => (
+                              <option value={tt} key={tt}>
+                                {TILE_TYPE_LABELS[tt]}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <select
+                            className="glyph-shape-select"
+                            value={style.shape}
+                            disabled={artSettings.mode !== 'glyph_grid'}
+                            onChange={(event) => updateSymbolStyle(symbol, { shape: event.target.value as ShapeKind })}
+                            aria-label={`${symbol} glyph`}
+                          >
+                            {GLYPH_SHAPES.map((shape) => (
+                              <option value={shape} key={shape} title={SHAPE_LABELS[shape]}>
+                                {SHAPE_SYMBOLS[shape]}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </div>
                     );
                   })}
@@ -1400,7 +1628,25 @@ function App() {
               {artSettings.mode === 'wang_maze' && wangPaletteHasUnlinkedEntries ? (
                 <small>Some Wang colors are auto-generated from the palette and are not directly editable.</small>
               ) : null}
-              {artSettings.mode !== 'glyph_grid' ? (
+              {artSettings.mode === 'truchet_tiles' ? (
+                <>
+                  <small>Tile type selects which Truchet tile orientation to use for each symbol. &ldquo;Any&rdquo; uses hash-based random selection.</small>
+                  <label className="inline-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={artSettings.truchet.whiteBackground}
+                      onChange={(event) =>
+                        setArtSettings((current) => ({
+                          ...current,
+                          truchet: { ...current.truchet, whiteBackground: event.target.checked },
+                        }))
+                      }
+                    />
+                    White tile background
+                  </label>
+                  <small>Override the tinted background of each tile with pure white.</small>
+                </>
+              ) : artSettings.mode !== 'glyph_grid' ? (
                 <small>Glyph shape controls apply only to Glyph Grid mode.</small>
               ) : null}
             </>
@@ -1539,6 +1785,31 @@ function App() {
                 {`Wang palette colors in use: ${wangTerrainStates.length} (minimum needed for unique symbol tiles).`}
               </small>
             </>
+          ) : null}
+
+          {artSettings.mode === 'truchet_tiles' ? (
+            <label className="stack">
+              Truchet variant
+              <select
+                value={artSettings.truchet.variant}
+                onChange={(event) =>
+                  setArtSettings((current) => ({
+                    ...current,
+                    truchet: {
+                      ...current.truchet,
+                      variant: event.target.value as ArtSettings['truchet']['variant'],
+                      tileOverrides: {},
+                    },
+                  }))
+                }
+              >
+                <option value="diagonal">Contrasting Triangles</option>
+                <option value="quarter_arc_strokes">Quarter-Circle Arcs</option>
+                <option value="quarter_arcs">Quarter-Circle Arcs (Leaf)</option>
+                <option value="colored_arcs">Quarter-Circle Arcs (Colored)</option>
+                <option value="diagonal_maze">Diagonal Maze</option>
+              </select>
+            </label>
           ) : null}
 
           <label className="inline-checkbox">
@@ -1929,6 +2200,12 @@ function App() {
                                       (entry.wangSecondaryStateIndex ?? ((entry.wangStateIndex ?? 0) + 1)) % Math.max(1, wangTerrainStates.length)
                                     ] ?? '#ffffff',
                                     maskId: entry.wangMaskId ?? 6,
+                                  }
+                                  : undefined,
+                                artSettings.mode === 'truchet_tiles'
+                                  ? {
+                                    variant: artSettings.truchet.variant,
+                                    tileType: entry.truchetTileType ?? 'any',
                                   }
                                   : undefined,
                               )}

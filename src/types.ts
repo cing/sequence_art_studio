@@ -20,6 +20,8 @@ export type ShapeKind = 'circle' | 'square' | 'triangle' | 'diamond' | 'hex' | '
 
 export type FontFamilyId = 'space_grotesk' | 'ibm_plex_sans' | 'ibm_plex_mono' | 'georgia' | 'helvetica';
 export type WangVariant = 'corner_sv2' | 'edge_legacy';
+export type TruchetVariant = 'diagonal' | 'quarter_arcs' | 'quarter_arc_strokes' | 'colored_arcs' | 'diagonal_maze';
+export type TruchetTileType = 'any' | 'diag_tl' | 'diag_tr' | 'diag_bl' | 'diag_br' | 'arc_a' | 'arc_b' | 'rot_0' | 'rot_90' | 'rot_180' | 'rot_270' | 'line_a' | 'line_b';
 
 export interface ResidueStyle {
   color: string;
@@ -64,6 +66,11 @@ export interface ArtSettings {
     variant: WangVariant;
     terrainCap: number;
     lockSymbolTiles: boolean;
+  };
+  truchet: {
+    variant: TruchetVariant;
+    tileOverrides: Record<string, TruchetTileType>;
+    whiteBackground: boolean;
   };
   showArtBorder: boolean;
   scale: number;

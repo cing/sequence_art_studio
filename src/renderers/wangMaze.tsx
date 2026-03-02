@@ -82,8 +82,38 @@ const S_V2_MASK_POLYGONS: Record<number, UnitPoint[][]> = {
   15: [[UNIT.nw, UNIT.ne, UNIT.se, UNIT.sw]],
 };
 
+const LOCKED_CORNER_MASK_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0];
+const LOCKED_MASK_VARIANTS = LOCKED_CORNER_MASK_ORDER.length;
+
+export interface WangSymbolProfile {
+  primaryState: number;
+  secondaryState: number;
+  cornerMaskId: number;
+  edgeCodes: {
+    n: number;
+    e: number;
+    s: number;
+    w: number;
+  };
+}
+
 function orderedSymbols(sequenceType: SequenceType): readonly string[] {
   return sequenceType === 'protein' ? AMINO_ACIDS_20 : DNA_SYMBOLS;
+}
+
+function normalizedUniqueSymbols(sequenceType: SequenceType, symbols?: readonly string[]): string[] {
+  const source = symbols && symbols.length > 0 ? symbols : orderedSymbols(sequenceType);
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  source.forEach((symbol) => {
+    const residue = symbol.toUpperCase();
+    if (seen.has(residue)) {
+      return;
+    }
+    seen.add(residue);
+    unique.push(residue);
+  });
+  return unique;
 }
 
 function parseHexColor(text: string): { r: number; g: number; b: number } | null {
@@ -208,7 +238,11 @@ function resolveWangVariant(settings: ArtSettings): WangVariant {
 }
 
 function resolveTerrainCap(settings: ArtSettings): number {
-  return clamp(Math.round(settings.wang?.terrainCap ?? 6), 2, 12);
+  return clamp(Math.round(settings.wang?.terrainCap ?? 20), 2, 32);
+}
+
+function shouldLockSymbolTiles(settings: ArtSettings): boolean {
+  return settings.wang?.lockSymbolTiles ?? true;
 }
 
 export function getWangSymbolColor(symbol: string, sequenceType: SequenceType, settings: ArtSettings): string {
@@ -221,9 +255,10 @@ export function resolveWangTerrainStates(
   settings: ArtSettings,
   symbols?: readonly string[],
 ): string[] {
-  const sourceSymbols = symbols && symbols.length > 0
-    ? symbols.map((symbol) => symbol.toUpperCase())
-    : [...orderedSymbols(sequenceType)];
+  const sourceSymbols = normalizedUniqueSymbols(sequenceType, symbols);
+  const requestedColorCount = sourceSymbols.length > LOCKED_MASK_VARIANTS ? 3 : 2;
+  const cap = resolveTerrainCap(settings);
+  const targetColorCount = Math.min(requestedColorCount, Math.max(3, cap));
 
   const unique: string[] = [];
   const seen = new Set<string>();
@@ -238,15 +273,15 @@ export function resolveWangTerrainStates(
     unique.push(color);
   }
 
-  const cap = resolveTerrainCap(settings);
-  let states = unique.slice(0, cap);
+  let states = unique.slice(0, targetColorCount);
 
   if (!states.length) {
     states = ['#4472c4'];
   }
 
-  while (states.length < 2) {
-    states.push(shiftedColor(states[0], 168, 10));
+  while (states.length < targetColorCount) {
+    const anchor = states[0];
+    states.push(shiftedColor(anchor, 76 + states.length * 51, states.length % 2 === 0 ? 10 : -12));
   }
 
   return states;
@@ -364,6 +399,52 @@ function pickSecondaryState(
   return (primaryState + offset) % terrainCount;
 }
 
+function lockedSecondaryState(primaryState: number, terrainCount: number): number {
+  if (terrainCount <= 1) {
+    return primaryState;
+  }
+  return (primaryState + 1) % terrainCount;
+}
+
+function lockedCornerMask(slotIndex: number): number {
+  return LOCKED_CORNER_MASK_ORDER[slotIndex % LOCKED_MASK_VARIANTS];
+}
+
+function lockedEdgeCodes(primaryState: number, secondaryState: number, cornerMaskId: number): TileEdgeCodes {
+  return {
+    n: (cornerMaskId & 8) ? primaryState : secondaryState,
+    e: (cornerMaskId & 4) ? primaryState : secondaryState,
+    s: (cornerMaskId & 2) ? primaryState : secondaryState,
+    w: (cornerMaskId & 1) ? primaryState : secondaryState,
+  };
+}
+
+function lockedTileProfile(slotIndex: number, terrainCount: number): WangSymbolProfile {
+  const primaryState = Math.floor(slotIndex / LOCKED_MASK_VARIANTS) % terrainCount;
+  const secondaryState = lockedSecondaryState(primaryState, terrainCount);
+  const cornerMaskId = lockedCornerMask(slotIndex);
+  return {
+    primaryState,
+    secondaryState,
+    cornerMaskId,
+    edgeCodes: lockedEdgeCodes(primaryState, secondaryState, cornerMaskId),
+  };
+}
+
+export function buildWangSymbolProfiles(
+  sequenceType: SequenceType,
+  terrainStates: readonly string[],
+  symbols?: readonly string[],
+): Map<string, WangSymbolProfile> {
+  const terrainCount = Math.max(2, terrainStates.length);
+  const sourceSymbols = normalizedUniqueSymbols(sequenceType, symbols);
+  const profiles = new Map<string, WangSymbolProfile>();
+  sourceSymbols.forEach((symbol, slotIndex) => {
+    profiles.set(symbol, lockedTileProfile(slotIndex, terrainCount));
+  });
+  return profiles;
+}
+
 function cornerMaskForPrimary(primaryState: number, corners: TileCornerStates, index: number, residue: string): number {
   let mask = 0;
   if (corners.nw === primaryState) {
@@ -471,6 +552,7 @@ export function buildWangMazeModel(
   const { sampled, step } = sampleSequence(sequence, maxTiles);
   const totalLength = sequence.length;
   const variant = resolveWangVariant(settings);
+  const lockSymbolTiles = shouldLockSymbolTiles(settings);
 
   if (!sampled.length) {
     return {
@@ -484,9 +566,11 @@ export function buildWangMazeModel(
     };
   }
 
-  const sampledSymbols = Array.from(new Set(sampled.toUpperCase().split('')));
-  const terrainStates = resolveWangTerrainStates(sequenceType, settings, sampledSymbols);
+  const sequenceSymbolSet = new Set(sequence.toUpperCase().split(''));
+  const sequenceSymbols = orderedSymbols(sequenceType).filter((symbol) => sequenceSymbolSet.has(symbol));
+  const terrainStates = resolveWangTerrainStates(sequenceType, settings, sequenceSymbols);
   const terrainCount = Math.max(2, terrainStates.length);
+  const symbolProfiles = buildWangSymbolProfiles(sequenceType, terrainStates, sequenceSymbols);
 
   const aspect = rect.width / rect.height;
   const baseColumns = Math.sqrt(sampled.length * aspect);
@@ -526,141 +610,209 @@ export function buildWangMazeModel(
   const tiles: WangTile[] = [];
 
   if (variant === 'edge_legacy') {
-    const vertical = Array.from({ length: rows }, () => Array.from({ length: columns + 1 }, () => 0));
-    const horizontal = Array.from({ length: rows + 1 }, () => Array.from({ length: columns }, () => 0));
+    if (lockSymbolTiles) {
+      for (let i = 0; i < sampled.length; i += 1) {
+        const row = Math.floor(i / columns);
+        const col = i % columns;
+        const residue = sampled[i];
+        const residueKey = residue.toUpperCase();
+        const profile = symbolProfiles.get(residueKey)
+          ?? lockedTileProfile(residueHash(i, residueKey, 'wang-fallback-slot') % LOCKED_MASK_VARIANTS, terrainCount);
 
-    const edgeCode = (salt: string, a: number, b: number, text: string): number =>
-      residueHash(a * 131 + b * 197, text, salt) % terrainCount;
+        const x = originX + col * tileSpan + inset;
+        const y = originY + row * tileSpan + inset;
 
-    for (let row = 0; row < rows; row += 1) {
-      if (hasCell(row, 0)) {
-        const leftIndex = row * columns;
-        vertical[row][0] = edgeCode('wang-v-left', leftIndex, row, sampled[leftIndex]);
+        tiles.push({
+          index: i * step,
+          residue,
+          x,
+          y,
+          size,
+          symbolState: profile.primaryState,
+          primaryState: profile.primaryState,
+          secondaryState: profile.secondaryState,
+          cornerMaskId: profile.cornerMaskId,
+          edgeCodes: profile.edgeCodes,
+          corners: {
+            nw: profile.primaryState,
+            ne: profile.primaryState,
+            se: profile.primaryState,
+            sw: profile.primaryState,
+          },
+        });
       }
+    } else {
+      const vertical = Array.from({ length: rows }, () => Array.from({ length: columns + 1 }, () => 0));
+      const horizontal = Array.from({ length: rows + 1 }, () => Array.from({ length: columns }, () => 0));
 
-      for (let col = 1; col < columns; col += 1) {
-        const leftExists = hasCell(row, col - 1);
-        const rightExists = hasCell(row, col);
-        if (leftExists && rightExists) {
-          const leftIndex = row * columns + (col - 1);
-          const rightIndex = row * columns + col;
-          vertical[row][col] = edgeCode('wang-v-mid', leftIndex, rightIndex, `${sampled[leftIndex]}${sampled[rightIndex]}`);
-        } else if (leftExists) {
-          const leftIndex = row * columns + (col - 1);
-          vertical[row][col] = edgeCode('wang-v-tail', leftIndex, row, sampled[leftIndex]);
-        } else if (rightExists) {
-          const rightIndex = row * columns + col;
-          vertical[row][col] = edgeCode('wang-v-head', rightIndex, row, sampled[rightIndex]);
+      const edgeCode = (salt: string, a: number, b: number, text: string): number =>
+        residueHash(a * 131 + b * 197, text, salt) % terrainCount;
+
+      for (let row = 0; row < rows; row += 1) {
+        if (hasCell(row, 0)) {
+          const leftIndex = row * columns;
+          vertical[row][0] = edgeCode('wang-v-left', leftIndex, row, sampled[leftIndex]);
+        }
+
+        for (let col = 1; col < columns; col += 1) {
+          const leftExists = hasCell(row, col - 1);
+          const rightExists = hasCell(row, col);
+          if (leftExists && rightExists) {
+            const leftIndex = row * columns + (col - 1);
+            const rightIndex = row * columns + col;
+            vertical[row][col] = edgeCode('wang-v-mid', leftIndex, rightIndex, `${sampled[leftIndex]}${sampled[rightIndex]}`);
+          } else if (leftExists) {
+            const leftIndex = row * columns + (col - 1);
+            vertical[row][col] = edgeCode('wang-v-tail', leftIndex, row, sampled[leftIndex]);
+          } else if (rightExists) {
+            const rightIndex = row * columns + col;
+            vertical[row][col] = edgeCode('wang-v-head', rightIndex, row, sampled[rightIndex]);
+          }
+        }
+
+        if (hasCell(row, columns - 1)) {
+          const rightIndex = row * columns + (columns - 1);
+          vertical[row][columns] = edgeCode('wang-v-right', rightIndex, row, sampled[rightIndex]);
         }
       }
 
-      if (hasCell(row, columns - 1)) {
-        const rightIndex = row * columns + (columns - 1);
-        vertical[row][columns] = edgeCode('wang-v-right', rightIndex, row, sampled[rightIndex]);
-      }
-    }
+      for (let col = 0; col < columns; col += 1) {
+        if (hasCell(0, col)) {
+          horizontal[0][col] = edgeCode('wang-h-top', col, 0, sampled[col]);
+        }
 
-    for (let col = 0; col < columns; col += 1) {
-      if (hasCell(0, col)) {
-        horizontal[0][col] = edgeCode('wang-h-top', col, 0, sampled[col]);
-      }
+        for (let row = 1; row < rows; row += 1) {
+          const topExists = hasCell(row - 1, col);
+          const bottomExists = hasCell(row, col);
+          if (topExists && bottomExists) {
+            const upperIndex = (row - 1) * columns + col;
+            const lowerIndex = row * columns + col;
+            horizontal[row][col] = edgeCode('wang-h-mid', upperIndex, lowerIndex, `${sampled[upperIndex]}${sampled[lowerIndex]}`);
+          } else if (topExists) {
+            const upperIndex = (row - 1) * columns + col;
+            horizontal[row][col] = edgeCode('wang-h-tail', upperIndex, row, sampled[upperIndex]);
+          } else if (bottomExists) {
+            const lowerIndex = row * columns + col;
+            horizontal[row][col] = edgeCode('wang-h-head', lowerIndex, row, sampled[lowerIndex]);
+          }
+        }
 
-      for (let row = 1; row < rows; row += 1) {
-        const topExists = hasCell(row - 1, col);
-        const bottomExists = hasCell(row, col);
-        if (topExists && bottomExists) {
-          const upperIndex = (row - 1) * columns + col;
-          const lowerIndex = row * columns + col;
-          horizontal[row][col] = edgeCode('wang-h-mid', upperIndex, lowerIndex, `${sampled[upperIndex]}${sampled[lowerIndex]}`);
-        } else if (topExists) {
-          const upperIndex = (row - 1) * columns + col;
-          horizontal[row][col] = edgeCode('wang-h-tail', upperIndex, row, sampled[upperIndex]);
-        } else if (bottomExists) {
-          const lowerIndex = row * columns + col;
-          horizontal[row][col] = edgeCode('wang-h-head', lowerIndex, row, sampled[lowerIndex]);
+        if (hasCell(rows - 1, col)) {
+          const lowerIndex = (rows - 1) * columns + col;
+          horizontal[rows][col] = edgeCode('wang-h-bottom', lowerIndex, col, sampled[lowerIndex]);
         }
       }
 
-      if (hasCell(rows - 1, col)) {
-        const lowerIndex = (rows - 1) * columns + col;
-        horizontal[rows][col] = edgeCode('wang-h-bottom', lowerIndex, col, sampled[lowerIndex]);
+      for (let i = 0; i < sampled.length; i += 1) {
+        const row = Math.floor(i / columns);
+        const col = i % columns;
+        const residue = sampled[i];
+        const symbolState = cellStates[row][col];
+
+        const x = originX + col * tileSpan + inset;
+        const y = originY + row * tileSpan + inset;
+
+        tiles.push({
+          index: i * step,
+          residue,
+          x,
+          y,
+          size,
+          symbolState,
+          primaryState: symbolState,
+          secondaryState: (symbolState + 1) % terrainCount,
+          cornerMaskId: [3, 6, 9, 12][residueHash(i, residue, 'wang-edge-mask') % 4],
+          edgeCodes: {
+            n: horizontal[row][col],
+            e: vertical[row][col + 1],
+            s: horizontal[row + 1][col],
+            w: vertical[row][col],
+          },
+          corners: {
+            nw: symbolState,
+            ne: symbolState,
+            se: symbolState,
+            sw: symbolState,
+          },
+        });
       }
-    }
-
-    for (let i = 0; i < sampled.length; i += 1) {
-      const row = Math.floor(i / columns);
-      const col = i % columns;
-      const residue = sampled[i];
-      const symbolState = cellStates[row][col];
-
-      const x = originX + col * tileSpan + inset;
-      const y = originY + row * tileSpan + inset;
-
-      tiles.push({
-        index: i * step,
-        residue,
-        x,
-        y,
-        size,
-        symbolState,
-        primaryState: symbolState,
-        secondaryState: (symbolState + 1) % terrainCount,
-        cornerMaskId: [3, 6, 9, 12][residueHash(i, residue, 'wang-edge-mask') % 4],
-        edgeCodes: {
-          n: horizontal[row][col],
-          e: vertical[row][col + 1],
-          s: horizontal[row + 1][col],
-          w: vertical[row][col],
-        },
-        corners: {
-          nw: symbolState,
-          ne: symbolState,
-          se: symbolState,
-          sw: symbolState,
-        },
-      });
     }
   } else {
-    const cornerStates = buildCornerStateGrid(rows, columns, hasCell, cellStates, terrainCount);
+    if (lockSymbolTiles) {
+      for (let i = 0; i < sampled.length; i += 1) {
+        const row = Math.floor(i / columns);
+        const col = i % columns;
+        const residue = sampled[i];
+        const residueKey = residue.toUpperCase();
+        const profile = symbolProfiles.get(residueKey)
+          ?? lockedTileProfile(residueHash(i, residueKey, 'wang-fallback-slot') % LOCKED_MASK_VARIANTS, terrainCount);
 
-    for (let i = 0; i < sampled.length; i += 1) {
-      const row = Math.floor(i / columns);
-      const col = i % columns;
-      const residue = sampled[i];
-      const symbolState = cellStates[row][col];
+        const x = originX + col * tileSpan + inset;
+        const y = originY + row * tileSpan + inset;
 
-      const x = originX + col * tileSpan + inset;
-      const y = originY + row * tileSpan + inset;
+        const corners: TileCornerStates = {
+          nw: profile.primaryState,
+          ne: profile.primaryState,
+          se: profile.primaryState,
+          sw: profile.primaryState,
+        };
 
-      const corners: TileCornerStates = {
-        nw: cornerStates[row][col],
-        ne: cornerStates[row][col + 1],
-        se: cornerStates[row + 1][col + 1],
-        sw: cornerStates[row + 1][col],
-      };
+        tiles.push({
+          index: i * step,
+          residue,
+          x,
+          y,
+          size,
+          symbolState: profile.primaryState,
+          primaryState: profile.primaryState,
+          secondaryState: profile.secondaryState,
+          cornerMaskId: profile.cornerMaskId,
+          edgeCodes: profile.edgeCodes,
+          corners,
+        });
+      }
+    } else {
+      const cornerStates = buildCornerStateGrid(rows, columns, hasCell, cellStates, terrainCount);
 
-      const primaryState = symbolState;
-      const secondaryState = pickSecondaryState(primaryState, corners, terrainCount, i, residue);
-      const cornerMaskId = cornerMaskForPrimary(primaryState, corners, i, residue);
+      for (let i = 0; i < sampled.length; i += 1) {
+        const row = Math.floor(i / columns);
+        const col = i % columns;
+        const residue = sampled[i];
+        const symbolState = cellStates[row][col];
 
-      tiles.push({
-        index: i * step,
-        residue,
-        x,
-        y,
-        size,
-        symbolState,
-        primaryState,
-        secondaryState,
-        cornerMaskId,
-        edgeCodes: {
-          n: 0,
-          e: 0,
-          s: 0,
-          w: 0,
-        },
-        corners,
-      });
+        const x = originX + col * tileSpan + inset;
+        const y = originY + row * tileSpan + inset;
+
+        const corners: TileCornerStates = {
+          nw: cornerStates[row][col],
+          ne: cornerStates[row][col + 1],
+          se: cornerStates[row + 1][col + 1],
+          sw: cornerStates[row + 1][col],
+        };
+
+        const primaryState = symbolState;
+        const secondaryState = pickSecondaryState(primaryState, corners, terrainCount, i, residue);
+        const cornerMaskId = cornerMaskForPrimary(primaryState, corners, i, residue);
+
+        tiles.push({
+          index: i * step,
+          residue,
+          x,
+          y,
+          size,
+          symbolState,
+          primaryState,
+          secondaryState,
+          cornerMaskId,
+          edgeCodes: {
+            n: 0,
+            e: 0,
+            s: 0,
+            w: 0,
+          },
+          corners,
+        });
+      }
     }
   }
 
