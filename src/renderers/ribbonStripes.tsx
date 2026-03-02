@@ -107,7 +107,7 @@ export function renderRibbonModel(model: RibbonModel, rect: Rect, clipId: string
           const labelSize = clamp(
             Math.min(segment.width * 0.46, segment.height * 0.84) * labelSizeScale,
             4,
-            28,
+            28 * labelSizeScale,
           );
           return (
             <g key={`ribbon-${segment.index}`} transform={`rotate(${segment.rotation} ${cx} ${cy})`}>

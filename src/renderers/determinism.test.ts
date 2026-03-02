@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ArtSettings } from '../types';
-import { buildProteinStyleMapFromScheme } from '../lib/aa-map';
+import { AMINO_ACIDS_20, buildProteinStyleMapFromScheme } from '../lib/aa-map';
 import { buildDnaStyleMapFromScheme } from '../lib/dna-map';
 import { buildGlyphGridModel } from './glyphGrid';
 import { buildHexWeaveModel } from './hexWeave';
@@ -20,11 +20,13 @@ const settings: ArtSettings = {
   wang: {
     variant: 'corner_sv2',
     terrainCap: 6,
+    lockSymbolTiles: true,
   },
   showArtBorder: true,
   scale: 1,
   spacing: 1,
   density: 1,
+  jitter: 1,
   glyphLabels: {
     enabled: true,
     color: '#21303a',
@@ -108,6 +110,57 @@ describe('renderer determinism', () => {
     expect(modelA).toEqual(modelB);
   });
 
+  it('wang lock keeps one tile profile per symbol', () => {
+    const sequence = 'DDDDCCCCEEEEDDDDCCCCEEEE';
+    const assertLockedProfiles = (variant: ArtSettings['wang']['variant']): void => {
+      const model = buildWangMazeModel(
+        sequence,
+        rect,
+        {
+          ...settings,
+          mode: 'wang_maze',
+          wang: { ...settings.wang, variant, lockSymbolTiles: true },
+        },
+        'protein',
+      );
+
+      const bySymbol = new Map<string, string>();
+      model.tiles.forEach((tile) => {
+        const symbol = tile.residue.toUpperCase();
+        const signature = [
+          tile.primaryState,
+          tile.secondaryState,
+          tile.cornerMaskId,
+          tile.edgeCodes.n,
+          tile.edgeCodes.e,
+          tile.edgeCodes.s,
+          tile.edgeCodes.w,
+        ].join('|');
+
+        const known = bySymbol.get(symbol);
+        if (known === undefined) {
+          bySymbol.set(symbol, signature);
+        } else {
+          expect(signature).toBe(known);
+        }
+      });
+    };
+
+    assertLockedProfiles('corner_sv2');
+    assertLockedProfiles('edge_legacy');
+  });
+
+  it('wang uses minimal palette size for unique symbol tiles', () => {
+    const sixteenSymbols = AMINO_ACIDS_20.slice(0, 16);
+    const seventeenSymbols = AMINO_ACIDS_20.slice(0, 17);
+
+    const palette16 = resolveWangTerrainStates('protein', { ...settings, mode: 'wang_maze' }, sixteenSymbols);
+    const palette17 = resolveWangTerrainStates('protein', { ...settings, mode: 'wang_maze' }, seventeenSymbols);
+
+    expect(palette16.length).toBe(2);
+    expect(palette17.length).toBe(3);
+  });
+
   it('truchet tile output is stable', () => {
     const modelA = buildTruchetModel(proteinSequence, rect, { ...settings, mode: 'truchet_tiles' }, 'protein');
     const modelB = buildTruchetModel(proteinSequence, rect, { ...settings, mode: 'truchet_tiles' }, 'protein');
@@ -148,6 +201,7 @@ describe('renderer determinism', () => {
       wang: {
         variant: 'corner_sv2',
         terrainCap: 6,
+        lockSymbolTiles: true,
       },
     });
     expect(terrainStates.length).toBeLessThanOrEqual(6);

@@ -63,11 +63,13 @@ export interface ArtSettings {
   wang: {
     variant: WangVariant;
     terrainCap: number;
+    lockSymbolTiles: boolean;
   };
   showArtBorder: boolean;
   scale: number;
   spacing: number;
   density: number;
+  jitter: number;
   glyphLabels: GlyphLabelSettings;
   legend: LegendSettings;
 }

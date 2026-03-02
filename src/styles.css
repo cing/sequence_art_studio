@@ -409,6 +409,10 @@ small {
   background: rgba(255, 255, 255, 0.78);
 }
 
+.aa-style-row.wang-palette-row {
+  grid-template-columns: 30px 1fr;
+}
+
 .aa-token {
   display: inline-grid;
   place-items: center;
@@ -437,6 +441,11 @@ small {
   padding: 6px 8px;
   line-height: 1;
   font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+}
+
+.glyph-shape-select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 @media (max-width: 1100px) {

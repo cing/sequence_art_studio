@@ -104,48 +104,72 @@ export function buildRadialBloomModel(
   const cx = rect.x + rect.width * 0.5;
   const cy = rect.y + rect.height * 0.5;
   const maxRadius = Math.min(rect.width, rect.height) * 0.48;
-  const spokes = clamp(Math.round(18 + settings.density * 60), 18, 98);
-  const rings = Math.ceil(sampled.length / spokes);
+
+  // scale controls spoke growth: low = proportional to radius, high = constant
+  const growth = clamp(1 - (settings.scale - 0.6) / 1.0, 0, 1);
+  const outerSpokes = clamp(Math.round(18 + settings.density * 60), 18, 98);
+
+  // Iteratively determine ring count since variable spokes changes total capacity.
+  let rings = Math.max(3, Math.ceil(sampled.length / outerSpokes));
+  for (let iter = 0; iter < 8; iter++) {
+    const gap = maxRadius / (rings + 1.25);
+    const inner = gap * 0.22;
+    let totalSlots = 0;
+    for (let r = 0; r < rings; r++) {
+      const fraction = clamp((inner + (r + 0.5) * gap) / maxRadius, 0.05, 1);
+      totalSlots += Math.max(3, Math.round(outerSpokes * (1 - growth * (1 - fraction))));
+    }
+    if (totalSlots >= sampled.length) break;
+    rings += Math.max(1, Math.ceil((sampled.length - totalSlots) / outerSpokes));
+  }
+
   const ringGap = maxRadius / (rings + 1.25);
   const baseInner = ringGap * 0.22;
-  const angularStep = (Math.PI * 2) / spokes;
   const angularCoverage = 1.06 - spacingRatio * 0.34;
-  const jitterScale = angularStep * (0.02 + spacingRatio * 0.38);
-  const radialCoverage = 1.04 + (1 - spacingRatio) * 0.14 + (settings.scale - 1) * 0.12;
+  const jitterBaseScale = 0.02 + spacingRatio * 0.38;
+  const radialCoverage = 1.04 + (1 - spacingRatio) * 0.14;
 
   const wedges: BloomWedge[] = [];
+  let residueIdx = 0;
 
-  for (let i = 0; i < sampled.length; i += 1) {
-    const residue = sampled[i];
-    const ring = Math.floor(i / spokes);
-    const spoke = i % spokes;
-    const hash = residueHash(i, residue, 'bloom');
-
+  for (let ring = 0; ring < rings && residueIdx < sampled.length; ring++) {
+    const fraction = clamp((baseInner + (ring + 0.5) * ringGap) / maxRadius, 0.05, 1);
+    const ringSpokes = Math.max(3, Math.round(outerSpokes * (1 - growth * (1 - fraction))));
+    const count = Math.min(ringSpokes, sampled.length - residueIdx);
+    const angularStep = (Math.PI * 2) / ringSpokes;
+    const jitterScale = angularStep * jitterBaseScale;
     const swirl = ring * angularStep * (0.08 + (1 - spacingRatio) * 0.06);
-    const centerAngle = (Math.PI * 2 * spoke) / spokes + (ring % 2 === 0 ? 0 : Math.PI / spokes) + swirl;
-    const jitter = (((hash >>> 4) % 1000) / 1000 - 0.5) * jitterScale;
-    const span = angularStep * angularCoverage;
-    const startA = centerAngle + jitter - span * 0.5;
-    const endA = centerAngle + jitter + span * 0.5;
 
-    const innerR = baseInner + ring * ringGap;
-    const outerR = Math.min(maxRadius, innerR + ringGap * radialCoverage);
+    for (let spoke = 0; spoke < count; spoke++) {
+      const residue = sampled[residueIdx];
+      const hash = residueHash(residueIdx, residue, 'bloom');
 
-    const baseColor = getStyleForSequenceSymbol(residue, sequenceType, settings).color;
-    const toneRatio = ((hash >>> 11) % 100) / 100;
-    const color = toneRatio > 0.52
-      ? blendHexColors(baseColor, '#ffffff', 0.06 + ((hash >>> 16) % 20) / 500)
-      : blendHexColors(baseColor, '#0f1722', 0.05 + ((hash >>> 18) % 24) / 520);
-    const opacityBoost = (1 - spacingRatio) * 0.24;
-    const opacity = clamp(0.58 + ((hash >>> 13) % 100) / 260 + opacityBoost, 0.56, 0.98);
+      const centerAngle = angularStep * spoke + (ring % 2 === 0 ? 0 : angularStep * 0.5) + swirl;
+      const jitter = (((hash >>> 4) % 1000) / 1000 - 0.5) * jitterScale;
+      const span = angularStep * angularCoverage;
+      const startA = centerAngle + jitter - span * 0.5;
+      const endA = centerAngle + jitter + span * 0.5;
 
-    wedges.push({
-      index: i * step,
-      residue,
-      path: wedgePath(cx, cy, innerR, outerR, startA, endA),
-      color,
-      opacity,
-    });
+      const innerR = baseInner + ring * ringGap;
+      const outerR = Math.min(maxRadius, innerR + ringGap * radialCoverage);
+
+      const baseColor = getStyleForSequenceSymbol(residue, sequenceType, settings).color;
+      const toneRatio = ((hash >>> 11) % 100) / 100;
+      const color = toneRatio > 0.52
+        ? blendHexColors(baseColor, '#ffffff', 0.06 + ((hash >>> 16) % 20) / 500)
+        : blendHexColors(baseColor, '#0f1722', 0.05 + ((hash >>> 18) % 24) / 520);
+      const opacityBoost = (1 - spacingRatio) * 0.24;
+      const opacity = clamp(0.58 + ((hash >>> 13) % 100) / 260 + opacityBoost, 0.56, 0.98);
+
+      wedges.push({
+        index: residueIdx * step,
+        residue,
+        path: wedgePath(cx, cy, innerR, outerR, startA, endA),
+        color,
+        opacity,
+      });
+      residueIdx++;
+    }
   }
 
   return {

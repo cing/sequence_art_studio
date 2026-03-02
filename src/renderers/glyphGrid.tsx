@@ -64,15 +64,17 @@ export function buildGlyphGridModel(
     const col = i % columns;
 
     const hash = residueHash(i, residue, 'grid');
-    const sizeFactor = 0.52 + ((hash >>> 9) % 200) / 500;
-    const jitterX = ((((hash >>> 18) % 1000) / 1000) - 0.5) * slotW * jitterScale;
-    const jitterY = ((((hash >>> 5) % 1000) / 1000) - 0.5) * slotH * jitterScale;
+    const jit = settings.jitter;
+    const rawSizeFactor = 0.52 + ((hash >>> 9) % 200) / 500;
+    const sizeFactor = 1 - jit * (1 - rawSizeFactor);
+    const jitterX = ((((hash >>> 18) % 1000) / 1000) - 0.5) * slotW * jitterScale * jit;
+    const jitterY = ((((hash >>> 5) % 1000) / 1000) - 0.5) * slotH * jitterScale * jit;
 
     const x = rect.x + col * slotW + slotW * 0.5 + jitterX;
     const y = rect.y + row * slotH + slotH * 0.5 + jitterY;
 
     const size = clamp(slot * sizeFactor * occupancy * (0.72 + settings.scale * 0.52), 2, slot * 1.04);
-    const rotation = hash % 360;
+    const rotation = (hash % 360) * jit;
 
     cells.push({
       index: i * step,
@@ -187,11 +189,11 @@ function renderShapeLayer(cell: GlyphCell, layer: ShapeLayer, key: string): Reac
   return <circle key={key} cx={x} cy={y} r={size * 0.42} {...common} />;
 }
 
-function paintLayers(cell: GlyphCell): ShapeLayer[] {
+function paintLayers(cell: GlyphCell, jit: number): ShapeLayer[] {
   const hash = residueHash(cell.index, cell.residue, 'paint-layers');
-  const jitterX = ((((hash >>> 6) % 1000) / 1000) - 0.5) * cell.size * 0.14;
-  const jitterY = ((((hash >>> 17) % 1000) / 1000) - 0.5) * cell.size * 0.14;
-  const angleJitter = (((hash >>> 10) % 1000) / 1000 - 0.5) * 8;
+  const jitterX = ((((hash >>> 6) % 1000) / 1000) - 0.5) * cell.size * 0.14 * jit;
+  const jitterY = ((((hash >>> 17) % 1000) / 1000) - 0.5) * cell.size * 0.14 * jit;
+  const angleJitter = (((hash >>> 10) % 1000) / 1000 - 0.5) * 8 * jit;
 
   return [
     {
@@ -241,7 +243,7 @@ export function renderGlyphGrid(model: GlyphGridModel, settings: ArtSettings, ui
     ),
     ...model.cells.map((cell) => {
       const groupKey = `glyph-cell-${cell.index}-${cell.x.toFixed(2)}-${cell.y.toFixed(2)}`;
-      const layers = paintLayers(cell);
+      const layers = paintLayers(cell, settings.jitter);
       return (
         <g key={groupKey} opacity={0.94}>
           <g filter={`url(#${brushFilterId})`}>
@@ -250,8 +252,9 @@ export function renderGlyphGrid(model: GlyphGridModel, settings: ArtSettings, ui
           {showGlyphText && cell.size > 7 ? (
             <text
               x={cell.x}
-              y={cell.y + cell.size * 0.16}
+              y={cell.y}
               textAnchor="middle"
+              dominantBaseline="central"
               fontSize={Math.max(5, cell.size * 0.35 * labelSizeScale)}
               fill={settings.glyphLabels.color}
               stroke="rgba(255, 255, 255, 0.74)"

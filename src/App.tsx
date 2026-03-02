@@ -17,10 +17,8 @@ import { exportPdf, exportPng, exportSvg } from './export/exporters';
 import { renderSurface } from './renderers/background';
 import { renderArt } from './renderers';
 import {
-  buildWangLegendSwatches,
+  buildWangSymbolProfiles,
   getWangCornerMaskPolygons,
-  getWangSymbolColor,
-  resolveWangStateIndex,
   resolveWangTerrainStates,
 } from './renderers/wangMaze';
 import type {
@@ -61,12 +59,6 @@ interface LegendLayout {
   symbolCellH: number;
   symbolGridTop: number;
   symbolTitleY: number;
-  wangStateCols: number;
-  wangStateCellW: number;
-  wangStateCellH: number;
-  wangStateTop: number;
-  wangSwatchTop: number;
-  wangSwatchSize: number;
 }
 
 interface LegendEntry {
@@ -75,6 +67,8 @@ interface LegendEntry {
   symbols: string[];
   label: string;
   wangStateIndex?: number;
+  wangSecondaryStateIndex?: number;
+  wangMaskId?: number;
 }
 
 const DEFAULT_PROTEIN_SCHEME_ID = PROTEIN_STYLE_SCHEMES[0].id;
@@ -109,12 +103,14 @@ function createDefaultArtSettings(): ArtSettings {
     dnaResidueStyles: buildDnaStyleMapFromScheme(DEFAULT_DNA_SCHEME_ID),
     wang: {
       variant: 'corner_sv2',
-      terrainCap: 6,
+      terrainCap: 20,
+      lockSymbolTiles: true,
     },
     showArtBorder: true,
     scale: 1,
     spacing: 1,
     density: 1,
+    jitter: 0,
     glyphLabels: {
       enabled: true,
       color: '#21303a',
@@ -366,6 +362,8 @@ function renderLegendModeSymbol(
       );
     }
 
+    const maskId = wangOptions?.maskId ?? 6;
+    const secondaryColor = wangOptions?.secondaryColor ?? '#ffffff';
     const cx = (left + right) * 0.5;
     const cy = (top + bottom) * 0.5;
     return (
@@ -375,13 +373,27 @@ function renderLegendModeSymbol(
           y={top}
           width={tileSize}
           height={tileSize}
-          fill={wangOptions?.secondaryColor ?? color}
+          fill={secondaryColor}
           fillOpacity={0.92}
           stroke={stroke}
           strokeWidth={Math.max(0.7, size * 0.06)}
         />
-        <polygon points={`${left.toFixed(3)},${top.toFixed(3)} ${right.toFixed(3)},${top.toFixed(3)} ${cx.toFixed(3)},${cy.toFixed(3)}`} fill="white" fillOpacity={0.16} />
-        <polygon points={`${right.toFixed(3)},${top.toFixed(3)} ${right.toFixed(3)},${bottom.toFixed(3)} ${cx.toFixed(3)},${cy.toFixed(3)}`} fill="black" fillOpacity={0.09} />
+        <polygon
+          points={`${left.toFixed(3)},${top.toFixed(3)} ${right.toFixed(3)},${top.toFixed(3)} ${cx.toFixed(3)},${cy.toFixed(3)}`}
+          fill={(maskId & 8) ? color : secondaryColor}
+        />
+        <polygon
+          points={`${right.toFixed(3)},${top.toFixed(3)} ${right.toFixed(3)},${bottom.toFixed(3)} ${cx.toFixed(3)},${cy.toFixed(3)}`}
+          fill={(maskId & 4) ? color : secondaryColor}
+        />
+        <polygon
+          points={`${left.toFixed(3)},${bottom.toFixed(3)} ${right.toFixed(3)},${bottom.toFixed(3)} ${cx.toFixed(3)},${cy.toFixed(3)}`}
+          fill={(maskId & 2) ? color : secondaryColor}
+        />
+        <polygon
+          points={`${left.toFixed(3)},${top.toFixed(3)} ${left.toFixed(3)},${bottom.toFixed(3)} ${cx.toFixed(3)},${cy.toFixed(3)}`}
+          fill={(maskId & 1) ? color : secondaryColor}
+        />
       </g>
     );
   }
@@ -409,7 +421,7 @@ function symbolLegendTitle(sequenceType: SequenceType, mode: ArtMode): string {
     return `${prefix} Color & Glyph Key`;
   }
   if (mode === 'wang_maze') {
-    return `${prefix} Wang Tile State & Symbol Key`;
+    return `${prefix} Wang Tile Symbol Key`;
   }
   if (mode === 'truchet_tiles') {
     return `${prefix} Truchet Tile Color Key`;
@@ -506,30 +518,57 @@ function App() {
     [activeSequenceType, dnaSymbolsInSequence],
   );
 
+  const wangLegendSymbols = useMemo(() => {
+    if (!record) {
+      return activeSymbols;
+    }
+    const present = new Set(record.sequence.toUpperCase().split(''));
+    const filtered = activeSymbols.filter((symbol) => present.has(symbol));
+    return filtered.length > 0 ? filtered : activeSymbols;
+  }, [record, activeSymbols]);
+
   const wangTerrainStates = useMemo(
     () =>
       resolveWangTerrainStates(
         activeSequenceType,
         artSettings,
-        activeSymbols,
+        wangLegendSymbols,
       ),
-    [activeSequenceType, artSettings, activeSymbols],
+    [activeSequenceType, artSettings, wangLegendSymbols],
+  );
+
+  const wangSymbolProfiles = useMemo(
+    () => buildWangSymbolProfiles(activeSequenceType, wangTerrainStates, wangLegendSymbols),
+    [activeSequenceType, wangTerrainStates, wangLegendSymbols],
   );
 
   const legendEntries = useMemo((): LegendEntry[] => {
+    if (artSettings.mode === 'wang_maze') {
+      return wangLegendSymbols.map((symbol) => {
+        const profile = wangSymbolProfiles.get(symbol) ?? {
+          primaryState: 0,
+          secondaryState: Math.min(1, Math.max(0, wangTerrainStates.length - 1)),
+          cornerMaskId: 1,
+        };
+        const primaryColor = wangTerrainStates[profile.primaryState % Math.max(1, wangTerrainStates.length)] ?? '#4472c4';
+        return {
+          color: primaryColor,
+          shape: 'square',
+          symbols: [symbol],
+          label: symbol,
+          wangStateIndex: profile.primaryState,
+          wangSecondaryStateIndex: profile.secondaryState,
+          wangMaskId: profile.cornerMaskId,
+        };
+      });
+    }
+
     const grouped: LegendEntry[] = [];
     const colorKeyToIndex = new Map<string, number>();
-    const wangStateCache = new Map<string, number>();
 
     for (const symbol of activeSymbols) {
       const style = getStyleForSequenceSymbol(symbol, activeSequenceType, artSettings);
-      const isWangMode = artSettings.mode === 'wang_maze';
-      const wangStateIndex = isWangMode
-        ? resolveWangStateIndex(symbol, activeSequenceType, artSettings, wangTerrainStates, wangStateCache)
-        : undefined;
-      const color = isWangMode
-        ? wangTerrainStates[wangStateIndex ?? 0] ?? getWangSymbolColor(symbol, activeSequenceType, artSettings)
-        : style.color;
+      const color = style.color;
       const colorKey = color.trim().toLowerCase();
       const existingIndex = colorKeyToIndex.get(colorKey);
 
@@ -537,10 +576,9 @@ function App() {
         colorKeyToIndex.set(colorKey, grouped.length);
         grouped.push({
           color,
-          shape: isWangMode ? 'square' : style.shape,
+          shape: style.shape,
           symbols: [symbol],
           label: symbol,
-          wangStateIndex,
         });
         continue;
       }
@@ -549,7 +587,7 @@ function App() {
       entry.symbols.push(symbol);
 
       // If grouped colors have mixed glyph shapes, use a neutral square swatch.
-      if (entry.shape !== style.shape && !isWangMode) {
+      if (entry.shape !== style.shape) {
         entry.shape = 'square';
       }
     }
@@ -558,17 +596,12 @@ function App() {
       ...entry,
       label: entry.symbols.join('/'),
     }));
-  }, [activeSymbols, activeSequenceType, artSettings, wangTerrainStates]);
+  }, [activeSymbols, activeSequenceType, artSettings, wangTerrainStates, wangLegendSymbols, wangSymbolProfiles]);
 
   const showLegendTitle = artSettings.legend.enabled;
   const showSymbolLegendInPreview = artSettings.legend.showSymbolMap;
   const showTypeLengthInLegend = showLegendTitle && artSettings.legend.showTypeLength;
   const showSymbolLegendTitleInPreview = showSymbolLegendInPreview && artSettings.legend.showSymbolKeyTitle;
-  const showWangStateLegend = showSymbolLegendInPreview && artSettings.mode === 'wang_maze' && wangTerrainStates.length > 0;
-  const wangLegendSwatches = useMemo(
-    () => buildWangLegendSwatches(wangTerrainStates.length, artSettings.wang.variant),
-    [wangTerrainStates.length, artSettings.wang.variant],
-  );
   const legendHasContent = showLegendTitle || showSymbolLegendInPreview;
   const legendFontCss = resolveFontFamily(artSettings.legend.fontFamily);
   const legendTextAnchor: 'start' | 'middle' | 'end' =
@@ -835,24 +868,11 @@ function App() {
     );
 
     const innerWidth = scaledWidthForWrap - padding * 2;
-    const wangStateCellHeight = clamp(Math.round(unit * 1.16), 18, 44);
-    const wangStateCellWidth = clamp(Math.round(unit * 1.9), 54, 122);
-    const wangStateCols = showWangStateLegend
-      ? clamp(Math.floor(innerWidth / wangStateCellWidth), 2, 8)
-      : 0;
-    const wangStateRows = wangStateCols > 0 ? Math.ceil(wangTerrainStates.length / wangStateCols) : 0;
-    const wangSwatchSize = clamp(Math.round(unit * 0.9), 14, 34);
-    const wangSwatchRowHeight = showWangStateLegend ? wangSwatchSize + unit * 0.22 : 0;
-    const wangStateHeight = showWangStateLegend
-      ? wangStateRows * wangStateCellHeight + wangSwatchRowHeight + unit * 0.5
-      : 0;
     const symbolCols = showSymbolLegendInPreview
       ? clamp(Math.floor(innerWidth / symbolCellWidth), 2, 10)
       : 0;
     const symbolRows = symbolCols > 0 ? Math.ceil(legendEntries.length / symbolCols) : 0;
-    const symbolMapHeight = symbolRows > 0
-      ? symbolRows * symbolCellHeight + symbolTitleGap + (showWangStateLegend ? wangStateHeight + unit * 0.2 : 0)
-      : 0;
+    const symbolMapHeight = symbolRows > 0 ? symbolRows * symbolCellHeight + symbolTitleGap : 0;
 
     const desiredHeight = Math.round(
       padding * 2 +
@@ -879,11 +899,7 @@ function App() {
     const subtitleStartY = showLegendTitle ? titleStartY + titleHeight + subtitleGap : titleStartY;
     const footerStartY = showLegendTitle ? subtitleStartY + subtitleHeight + footerGap : subtitleStartY;
     const textBottomY = showLegendTitle ? footerStartY + footerHeight : boxY + padding;
-    const wangStateTop = textBottomY + symbolTitleGap + unit * 0.22;
-    const wangSwatchTop = wangStateTop + wangStateRows * wangStateCellHeight + unit * 0.24;
-    const symbolGridTop = textBottomY
-      + symbolTitleGap
-      + (showWangStateLegend ? wangStateHeight + unit * 0.2 : 0);
+    const symbolGridTop = textBottomY + symbolTitleGap;
 
     return {
       boxX,
@@ -905,12 +921,6 @@ function App() {
       symbolCellH: symbolCellHeight,
       symbolGridTop,
       symbolTitleY: showSymbolLegendTitleInPreview ? textBottomY + (showLegendTitle ? unit * 0.34 : unit * 0.78) : textBottomY,
-      wangStateCols,
-      wangStateCellW: wangStateCols > 0 ? actualInnerWidth / wangStateCols : 0,
-      wangStateCellH: wangStateCellHeight,
-      wangStateTop,
-      wangSwatchTop,
-      wangSwatchSize,
     };
   }, [
     layout.legendRect,
@@ -925,13 +935,11 @@ function App() {
     artSettings.legend.xOffset,
     artSettings.legend.yOffset,
     showSymbolLegendInPreview,
-    showWangStateLegend,
     metadata.accession,
     metadata.subtitle,
     metadata.title,
     record,
     legendEntries,
-    wangTerrainStates.length,
   ]);
 
   const currentSchemeId = activeSequenceType === 'dna' ? artSettings.dnaSchemeId : artSettings.proteinSchemeId;
@@ -946,6 +954,45 @@ function App() {
     || artSettings.mode === 'hex_weave';
 
   const currentSchemeOptions = activeSequenceType === 'dna' ? DNA_STYLE_SCHEMES : PROTEIN_STYLE_SCHEMES;
+  const wangPaletteEntries = useMemo(() => {
+    if (artSettings.mode !== 'wang_maze') {
+      return [] as Array<{
+        id: string;
+        label: string;
+        color: string;
+        driverSymbol: string | null;
+      }>;
+    }
+
+    const uniqueColorDrivers: string[] = [];
+    const seenColors = new Set<string>();
+    for (const symbol of wangLegendSymbols) {
+      const style = getStyleForSequenceSymbol(symbol, activeSequenceType, artSettings);
+      const colorKey = style.color.trim().toLowerCase();
+      if (seenColors.has(colorKey)) {
+        continue;
+      }
+      seenColors.add(colorKey);
+      uniqueColorDrivers.push(symbol);
+      if (uniqueColorDrivers.length >= wangTerrainStates.length) {
+        break;
+      }
+    }
+
+    return wangTerrainStates.map((color, index) => ({
+      id: `w${index + 1}`,
+      label: `W${index + 1}`,
+      color,
+      driverSymbol: uniqueColorDrivers[index] ?? null,
+    }));
+  }, [artSettings.mode, wangLegendSymbols, activeSequenceType, artSettings, wangTerrainStates]);
+  const wangPaletteHasUnlinkedEntries = wangPaletteEntries.some((entry) => entry.driverSymbol === null);
+  const glyphMapTitle = artSettings.mode === 'wang_maze'
+    ? 'Wang Tile Color Map'
+    : activeSequenceType === 'dna'
+      ? 'DNA Symbol Glyph/Color Map'
+      : 'Amino Acid Glyph/Color Map';
+
   const legendTextX = useMemo(() => {
     if (!legendLayout) {
       return 0;
@@ -1289,7 +1336,7 @@ function App() {
         </section>
 
         <section className="glyph-map-section" ref={glyphMapSectionRef}>
-          <h2>{activeSequenceType === 'dna' ? 'DNA Symbol Glyph/Color Map' : 'Amino Acid Glyph/Color Map'}</h2>
+          <h2>{glyphMapTitle}</h2>
           {activeSequenceType === 'dna' && record ? (
             <small>
               Showing only DNA symbols present in this sequence ({activeSymbols.join(', ')}).
@@ -1298,38 +1345,61 @@ function App() {
           {showColorMapEditor ? (
             <>
               <small>
-                Color edits apply to all art modes and will switch to Custom.
+                {artSettings.mode === 'wang_maze'
+                  ? 'W1..Wn are Wang palette colors for this render mode.'
+                  : 'Color edits apply to all art modes and will switch to Custom.'}
               </small>
               <div className="aa-style-grid">
-                {activeSymbols.map((symbol) => {
-                  const style = getStyleForSequenceSymbol(symbol, activeSequenceType, artSettings);
-                  return (
-                    <div className="aa-style-row" key={symbol}>
-                      <span className="aa-token">{symbol}</span>
+                {artSettings.mode === 'wang_maze'
+                  ? wangPaletteEntries.map((entry) => (
+                    <div className="aa-style-row wang-palette-row" key={entry.id}>
+                      <span className="aa-token">{entry.label}</span>
                       <input
                         className="aa-color-input"
                         type="color"
-                        value={style.color}
-                        onChange={(event) => updateSymbolStyle(symbol, { color: event.target.value })}
-                        aria-label={`${symbol} color`}
+                        value={entry.color}
+                        disabled={!entry.driverSymbol}
+                        onChange={(event) => {
+                          if (entry.driverSymbol) {
+                            updateSymbolStyle(entry.driverSymbol, { color: event.target.value });
+                          }
+                        }}
+                        aria-label={`${entry.label} color`}
                       />
-                      <select
-                        className="glyph-shape-select"
-                        value={style.shape}
-                        disabled={artSettings.mode !== 'glyph_grid'}
-                        onChange={(event) => updateSymbolStyle(symbol, { shape: event.target.value as ShapeKind })}
-                        aria-label={`${symbol} glyph`}
-                      >
-                        {GLYPH_SHAPES.map((shape) => (
-                          <option value={shape} key={shape} title={SHAPE_LABELS[shape]}>
-                            {SHAPE_SYMBOLS[shape]}
-                          </option>
-                        ))}
-                      </select>
                     </div>
-                  );
-                })}
+                  ))
+                  : activeSymbols.map((symbol) => {
+                    const style = getStyleForSequenceSymbol(symbol, activeSequenceType, artSettings);
+                    return (
+                      <div className="aa-style-row" key={symbol}>
+                        <span className="aa-token">{symbol}</span>
+                        <input
+                          className="aa-color-input"
+                          type="color"
+                          value={style.color}
+                          onChange={(event) => updateSymbolStyle(symbol, { color: event.target.value })}
+                          aria-label={`${symbol} color`}
+                        />
+                        <select
+                          className="glyph-shape-select"
+                          value={style.shape}
+                          disabled={artSettings.mode !== 'glyph_grid'}
+                          onChange={(event) => updateSymbolStyle(symbol, { shape: event.target.value as ShapeKind })}
+                          aria-label={`${symbol} glyph`}
+                        >
+                          {GLYPH_SHAPES.map((shape) => (
+                            <option value={shape} key={shape} title={SHAPE_LABELS[shape]}>
+                              {SHAPE_SYMBOLS[shape]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })}
               </div>
+              {artSettings.mode === 'wang_maze' && wangPaletteHasUnlinkedEntries ? (
+                <small>Some Wang colors are auto-generated from the palette and are not directly editable.</small>
+              ) : null}
               {artSettings.mode !== 'glyph_grid' ? (
                 <small>Glyph shape controls apply only to Glyph Grid mode.</small>
               ) : null}
@@ -1446,8 +1516,27 @@ function App() {
                   <option value="edge_legacy">Edge legacy</option>
                 </select>
               </label>
+              <label className="inline-checkbox">
+                <input
+                  type="checkbox"
+                  checked={artSettings.wang.lockSymbolTiles}
+                  onChange={(event) =>
+                    setArtSettings((current) => ({
+                      ...current,
+                      wang: {
+                        ...current.wang,
+                        lockSymbolTiles: event.target.checked,
+                      },
+                    }))
+                  }
+                />
+                Lock symbol tiles
+              </label>
               <small>
-                {`Terrain states from preset: ${wangTerrainStates.length} (cap ${artSettings.wang.terrainCap})`}
+                Same symbol, same tile profile everywhere in Wang mode.
+              </small>
+              <small>
+                {`Wang palette colors in use: ${wangTerrainStates.length} (minimum needed for unique symbol tiles).`}
               </small>
             </>
           ) : null}
@@ -1496,7 +1585,7 @@ function App() {
               : 'Per-symbol manual overrides are active.'}
           </small>
 
-          <label className="stack">
+          <label className="stack" style={artSettings.mode === 'wang_maze' ? { opacity: 0.4 } : undefined}>
             Scale ({artSettings.scale.toFixed(2)})
             <input
               type="range"
@@ -1504,6 +1593,7 @@ function App() {
               max={1.6}
               step={0.01}
               value={artSettings.scale}
+              disabled={artSettings.mode === 'wang_maze'}
               onChange={(event) => setArtSettings((current) => ({ ...current, scale: Number(event.target.value) }))}
             />
           </label>
@@ -1531,6 +1621,20 @@ function App() {
               onChange={(event) => setArtSettings((current) => ({ ...current, density: Number(event.target.value) }))}
             />
           </label>
+
+          {artSettings.mode === 'glyph_grid' && (
+            <label className="stack">
+              Jitter ({artSettings.jitter.toFixed(2)})
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={artSettings.jitter}
+                onChange={(event) => setArtSettings((current) => ({ ...current, jitter: Number(event.target.value) }))}
+              />
+            </label>
+          )}
 
         </section>
 
@@ -1793,64 +1897,6 @@ function App() {
                           </text>
                         ) : null}
 
-                        {showWangStateLegend ? (
-                          <>
-                            {wangTerrainStates.map((stateColor, index) => {
-                              const row = Math.floor(index / Math.max(1, legendLayout.wangStateCols));
-                              const col = index % Math.max(1, legendLayout.wangStateCols);
-                              const cellX = legendLayout.boxX + legendLayout.padding + col * legendLayout.wangStateCellW;
-                              const cellY = legendLayout.wangStateTop + row * legendLayout.wangStateCellH;
-                              const chipSize = Math.min(legendLayout.wangStateCellH * 0.58, legendLayout.wangStateCellW * 0.28);
-                              return (
-                                <g key={`wang-state-${index}`}>
-                                  <rect
-                                    x={cellX}
-                                    y={cellY + legendLayout.wangStateCellH * 0.2}
-                                    width={chipSize}
-                                    height={chipSize}
-                                    fill={stateColor}
-                                    stroke="rgba(15, 22, 30, 0.2)"
-                                    strokeWidth={Math.max(0.6, chipSize * 0.06)}
-                                  />
-                                  <text
-                                    x={cellX + chipSize + Math.max(5, chipSize * 0.36)}
-                                    y={cellY + legendLayout.wangStateCellH * 0.62}
-                                    fill={legendTextColor}
-                                    fontFamily={legendFontCss}
-                                    fontSize={Math.max(9, Math.round(legendLayout.footerFont * 0.9))}
-                                  >
-                                    {`T${index + 1}`}
-                                  </text>
-                                </g>
-                              );
-                            })}
-
-                            {wangLegendSwatches.map((swatch, index) => {
-                              const swatchX = legendLayout.boxX + legendLayout.padding + legendLayout.wangSwatchSize * 0.56 + index * (legendLayout.wangSwatchSize * 1.45);
-                              const swatchY = legendLayout.wangSwatchTop + legendLayout.wangSwatchSize * 0.56;
-                              const primaryColor = wangTerrainStates[swatch.primaryState % wangTerrainStates.length] ?? wangTerrainStates[0];
-                              const secondaryColor = wangTerrainStates[swatch.secondaryState % wangTerrainStates.length] ?? wangTerrainStates[0];
-                              return (
-                                <g key={`wang-swatch-${index}`}>
-                                  {renderLegendModeSymbol(
-                                    'wang_maze',
-                                    'square',
-                                    swatchX,
-                                    swatchY,
-                                    legendLayout.wangSwatchSize,
-                                    primaryColor,
-                                    {
-                                      variant: artSettings.wang.variant,
-                                      secondaryColor,
-                                      maskId: swatch.maskId,
-                                    },
-                                  )}
-                                </g>
-                              );
-                            })}
-                          </>
-                        ) : null}
-
                         {legendEntries.map((entry, index) => {
                           const row = Math.floor(index / legendLayout.symbolCols);
                           const col = index % legendLayout.symbolCols;
@@ -1880,8 +1926,9 @@ function App() {
                                   ? {
                                     variant: artSettings.wang.variant,
                                     secondaryColor: wangTerrainStates[
-                                      ((entry.wangStateIndex ?? 0) + 1) % Math.max(1, wangTerrainStates.length)
+                                      (entry.wangSecondaryStateIndex ?? ((entry.wangStateIndex ?? 0) + 1)) % Math.max(1, wangTerrainStates.length)
                                     ] ?? '#ffffff',
+                                    maskId: entry.wangMaskId ?? 6,
                                   }
                                   : undefined,
                               )}
