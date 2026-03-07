@@ -16,6 +16,7 @@ import { clamp, wrapWords } from './lib/utils';
 import { exportPdf, exportPng, exportSvg } from './export/exporters';
 import { renderSurface } from './renderers/background';
 import { renderArt } from './renderers';
+import { useSonification, SonificationHighlight, buildPlaybackMap } from './sonification';
 import {
   buildWangSymbolProfiles,
   getWangCornerMaskPolygons,
@@ -689,6 +690,17 @@ function App() {
     }
     return renderArt(record.sequence, record.sequenceType, layout.artRect, artSettings, uidRef.current);
   }, [record, layout, artSettings]);
+
+  const playbackMap = useMemo(() => {
+    if (!record) return null;
+    return buildPlaybackMap(record.sequence, record.sequenceType, layout.artRect, artSettings);
+  }, [record, layout.artRect, artSettings]);
+
+  const { isPlaying, currentEntry, toggle: toggleSonification } = useSonification(
+    playbackMap,
+    record?.sequenceType ?? 'protein',
+    record?.sequence ?? '',
+  );
 
   const legendTextColor = '#12212a';
 
@@ -1996,6 +2008,25 @@ function App() {
               <div className="preview-zoom-controls">
                 <button
                   type="button"
+                  className="preview-zoom-btn sonify-btn"
+                  onClick={toggleSonification}
+                  aria-label={isPlaying ? 'Stop sonification' : 'Play sonification'}
+                  title={isPlaying ? 'Stop sequence audio' : 'Play sequence as audio'}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M3 9v6h4l5 5V4L7 9H3z" />
+                    {isPlaying ? (
+                      <>
+                        <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
+                        <path d="M19 12c0 3.53-2.04 6.58-5 8.03v2.1c4.17-1.6 7-5.63 7-10.13s-2.83-8.53-7-10.13v2.1c2.96 1.46 5 4.5 5 8.03z" />
+                      </>
+                    ) : (
+                      <line x1="23" y1="1" x2="1" y2="23" stroke="currentColor" strokeWidth="2" />
+                    )}
+                  </svg>
+                </button>
+                <button
+                  type="button"
                   className="preview-zoom-btn"
                   onClick={() => zoomPreview(-PREVIEW_ZOOM_STEP)}
                   disabled={previewScale <= PREVIEW_ZOOM_MIN + 0.001}
@@ -2061,6 +2092,8 @@ function App() {
                   {renderSurface(layout.widthPx, layout.heightPx)}
 
                   {renderResult?.nodes}
+
+                  <SonificationHighlight entry={currentEntry} />
 
                   {artSettings.showArtBorder ? (
                     <rect

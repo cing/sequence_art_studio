@@ -9,6 +9,9 @@ export interface BloomWedge {
   path: string;
   color: string;
   opacity: number;
+  cx: number;
+  cy: number;
+  size: number;
 }
 
 export interface RadialBloomModel {
@@ -161,12 +164,18 @@ export function buildRadialBloomModel(
       const opacityBoost = (1 - spacingRatio) * 0.24;
       const opacity = clamp(0.58 + ((hash >>> 13) % 100) / 260 + opacityBoost, 0.56, 0.98);
 
+      const midR = (innerR + outerR) / 2;
+      const midA = (startA + endA) / 2;
+
       wedges.push({
         index: residueIdx * step,
         residue,
         path: wedgePath(cx, cy, innerR, outerR, startA, endA),
         color,
         opacity,
+        cx: cx + midR * Math.cos(midA),
+        cy: cy + midR * Math.sin(midA),
+        size: outerR - innerR,
       });
       residueIdx++;
     }

@@ -276,6 +276,16 @@ button:disabled {
   filter: none;
 }
 
+.sonify-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sonify-highlight {
+  pointer-events: none;
+}
+
 .preview-zoom-reset {
   width: auto;
   min-width: 58px;
