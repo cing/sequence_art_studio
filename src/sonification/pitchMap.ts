@@ -1,4 +1,5 @@
 import type { SequenceType } from '../types';
+import type { SequencePalette } from './sequencePalette';
 
 // MIDI note -> Hz
 function midiToHz(midi: number): number {
@@ -38,12 +39,69 @@ const HYDROPHOBICITY: Record<string, number> = {
   D: 0.0, E: 0.0, N: 0.0, Q: 0.0, K: 0.0, R: 0.0,
 };
 
-export function getFrequency(residue: string, seqType: SequenceType): number {
-  const r = residue.toUpperCase();
-  if (seqType === 'dna') {
-    return midiToHz(DNA_MIDI[r] ?? DNA_AMBIGUITY_MIDI);
+export function quantizeToScale(midi: number, scaleIntervals: number[], rootMidi: number): number {
+  let best = midi;
+  let bestDist = Infinity;
+  // Check scale degrees across several octaves around the note
+  for (let octave = -2; octave <= 2; octave++) {
+    for (const interval of scaleIntervals) {
+      const candidate = rootMidi + octave * 12 + interval;
+      const dist = Math.abs(midi - candidate);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = candidate;
+      }
+    }
   }
-  return midiToHz(PROTEIN_MIDI[r] ?? 55); // fallback G3
+  return best;
+}
+
+// Standard genetic code: codon -> amino acid single letter
+const CODON_TABLE: Record<string, string> = {
+  TTT:'F',TTC:'F',TTA:'L',TTG:'L',CTT:'L',CTC:'L',CTA:'L',CTG:'L',
+  ATT:'I',ATC:'I',ATA:'I',ATG:'M',GTT:'V',GTC:'V',GTA:'V',GTG:'V',
+  TCT:'S',TCC:'S',TCA:'S',TCG:'S',CCT:'P',CCC:'P',CCA:'P',CCG:'P',
+  ACT:'T',ACC:'T',ACA:'T',ACG:'T',GCT:'A',GCC:'A',GCA:'A',GCG:'A',
+  TAT:'Y',TAC:'Y',TAA:'*',TAG:'*',CAT:'H',CAC:'H',CAA:'Q',CAG:'Q',
+  AAT:'N',AAC:'N',AAA:'K',AAG:'K',GAT:'D',GAC:'D',GAA:'E',GAG:'E',
+  TGT:'C',TGC:'C',TGA:'*',TGG:'W',CGT:'R',CGC:'R',CGA:'R',CGG:'R',
+  AGT:'S',AGC:'S',AGA:'R',AGG:'R',GGT:'G',GGC:'G',GGA:'G',GGG:'G',
+};
+
+// RNA U→T normalization for codon lookup
+function normalizeCodon(c: string): string {
+  return c.replace(/U/g, 'T');
+}
+
+/** Translate a codon (3 bases) to an amino acid and return its MIDI note. */
+export function codonToMidi(codon: string): number {
+  const aa = CODON_TABLE[normalizeCodon(codon.toUpperCase())];
+  if (!aa || aa === '*') return PROTEIN_MIDI['G'] ?? 59; // stop codon → structural accent
+  return PROTEIN_MIDI[aa] ?? 55;
+}
+
+export function getFrequency(
+  residue: string,
+  seqType: SequenceType,
+  palette?: SequencePalette,
+  codon?: string,
+): number {
+  let midi: number;
+
+  if (seqType === 'dna' && codon) {
+    // Translate codon to amino acid pitch — same warm register as protein
+    midi = codonToMidi(codon);
+  } else if (seqType === 'dna') {
+    midi = DNA_MIDI[residue.toUpperCase()] ?? DNA_AMBIGUITY_MIDI;
+  } else {
+    midi = PROTEIN_MIDI[residue.toUpperCase()] ?? 55;
+  }
+
+  if (palette) {
+    midi = quantizeToScale(midi, palette.scaleIntervals, palette.rootMidi);
+  }
+
+  return midiToHz(midi);
 }
 
 export function getVelocity(

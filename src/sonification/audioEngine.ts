@@ -1,6 +1,11 @@
+import { DrumEngine } from './drumEngine';
+import type { DrumVoice } from './drumPatterns';
+
 export class SequenceAudioEngine {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
+  private drumGain: GainNode | null = null;
+  private drumEngine: DrumEngine | null = null;
 
   init(): void {
     if (this.ctx) return;
@@ -8,6 +13,12 @@ export class SequenceAudioEngine {
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.value = 0.35;
     this.masterGain.connect(this.ctx.destination);
+
+    this.drumGain = this.ctx.createGain();
+    this.drumGain.gain.value = 0.6;
+    this.drumGain.connect(this.masterGain);
+
+    this.drumEngine = new DrumEngine(this.ctx, this.drumGain);
   }
 
   playNote(freq: number, velocity: number, duration: number, startTime: number): void {
@@ -55,24 +66,36 @@ export class SequenceAudioEngine {
     osc2.stop(stopTime);
   }
 
+  playDrumHit(voice: DrumVoice, velocity: number, startTime: number): void {
+    this.drumEngine?.playVoice(voice, velocity, startTime);
+  }
+
   get currentTime(): number {
     return this.ctx?.currentTime ?? 0;
   }
 
   stop(): void {
     if (!this.ctx || !this.masterGain) return;
-    // Ramp master gain to 0 quickly to avoid clicks
     this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
     this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
     this.masterGain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.05);
+    if (this.drumGain) {
+      this.drumGain.gain.cancelScheduledValues(this.ctx.currentTime);
+      this.drumGain.gain.setValueAtTime(this.drumGain.gain.value, this.ctx.currentTime);
+      this.drumGain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.05);
+    }
   }
 
   resume(): void {
     if (!this.ctx || !this.masterGain) return;
-    // Restore master gain for new playback
     this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
     this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
     this.masterGain.gain.linearRampToValueAtTime(0.35, this.ctx.currentTime + 0.02);
+    if (this.drumGain) {
+      this.drumGain.gain.cancelScheduledValues(this.ctx.currentTime);
+      this.drumGain.gain.setValueAtTime(this.drumGain.gain.value, this.ctx.currentTime);
+      this.drumGain.gain.linearRampToValueAtTime(0.6, this.ctx.currentTime + 0.02);
+    }
   }
 
   dispose(): void {
@@ -81,6 +104,8 @@ export class SequenceAudioEngine {
       void this.ctx.close();
       this.ctx = null;
       this.masterGain = null;
+      this.drumGain = null;
+      this.drumEngine = null;
     }
   }
 }

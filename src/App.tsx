@@ -676,6 +676,16 @@ function App() {
   const [previewPan, setPreviewPan] = useState({ x: 0, y: 0 });
   const [previewDragging, setPreviewDragging] = useState(false);
   const [showLegendEditor, setShowLegendEditor] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isFullscreen]);
 
   const activeSequenceType: SequenceType = record?.sequenceType ?? 'protein';
 
@@ -696,7 +706,7 @@ function App() {
     return buildPlaybackMap(record.sequence, record.sequenceType, layout.artRect, artSettings);
   }, [record, layout.artRect, artSettings]);
 
-  const { isPlaying, currentEntry, toggle: toggleSonification } = useSonification(
+  const { isPlaying, currentEntry, codonEntries, activeDrumHits, toggle: toggleSonification } = useSonification(
     playbackMap,
     record?.sequenceType ?? 'protein',
     record?.sequence ?? '',
@@ -1359,7 +1369,7 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={isFullscreen ? 'app-shell app-shell-fullscreen' : 'app-shell'}>
       <aside className="panel left-panel">
         <header>
           <h1>Sequence Art Studio</h1>
@@ -2061,6 +2071,20 @@ function App() {
                     {showLegendEditor ? 'Hide Text' : 'Show Text'}
                   </button>
                 ) : null}
+                <button
+                  type="button"
+                  className="preview-zoom-btn"
+                  onClick={() => setIsFullscreen(true)}
+                  aria-label="Fullscreen preview"
+                  title="Fullscreen preview"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="15 3 21 3 21 9" />
+                    <polyline points="9 21 3 21 3 15" />
+                    <line x1="21" y1="3" x2="14" y2="10" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
+                  </svg>
+                </button>
               </div>
             ) : null}
           </div>
@@ -2093,7 +2117,7 @@ function App() {
 
                   {renderResult?.nodes}
 
-                  <SonificationHighlight entry={currentEntry} />
+                  <SonificationHighlight entry={currentEntry} codonEntries={codonEntries} drumHits={activeDrumHits} />
 
                   {artSettings.showArtBorder ? (
                     <rect
@@ -2384,6 +2408,44 @@ function App() {
 
         {inputError ? <p className="error-text">{inputError}</p> : null}
         {status ? <p className="status-text">{status}</p> : null}
+
+        {isFullscreen ? (
+          <div className="fullscreen-toolbar">
+            <button
+              type="button"
+              className="preview-zoom-btn sonify-btn"
+              onClick={toggleSonification}
+              aria-label={isPlaying ? 'Stop sonification' : 'Play sonification'}
+              title={isPlaying ? 'Stop sequence audio' : 'Play sequence as audio'}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M3 9v6h4l5 5V4L7 9H3z" />
+                {isPlaying ? (
+                  <>
+                    <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
+                    <path d="M19 12c0 3.53-2.04 6.58-5 8.03v2.1c4.17-1.6 7-5.63 7-10.13s-2.83-8.53-7-10.13v2.1c2.96 1.46 5 4.5 5 8.03z" />
+                  </>
+                ) : (
+                  <line x1="23" y1="1" x2="1" y2="23" stroke="currentColor" strokeWidth="2" />
+                )}
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="preview-zoom-btn"
+              onClick={() => setIsFullscreen(false)}
+              aria-label="Exit fullscreen"
+              title="Exit fullscreen"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="4 14 10 14 10 20" />
+                <polyline points="20 10 14 10 14 4" />
+                <line x1="14" y1="10" x2="21" y2="3" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            </button>
+          </div>
+        ) : null}
       </main>
     </div>
   );
