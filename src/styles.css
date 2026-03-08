@@ -73,10 +73,35 @@ p {
   overflow-y: auto;
 }
 
+.header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .left-panel h1 {
   margin: 0;
   font-size: 1.8rem;
   line-height: 1.1;
+}
+
+.dark-mode-toggle {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(17, 30, 45, 0.18);
+  background: rgba(255, 255, 255, 0.7);
+  color: #2a3a4a;
+  cursor: pointer;
+}
+
+.dark-mode-toggle:hover {
+  background: rgba(255, 255, 255, 0.95);
 }
 
 .left-panel > header p {
@@ -453,6 +478,29 @@ small {
   font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
 }
 
+.canvas-bg-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-bg-row input[type='color'] {
+  width: 36px;
+  height: 32px;
+  padding: 2px;
+  border-radius: 8px;
+  border: 1px solid rgba(26, 44, 66, 0.24);
+  cursor: pointer;
+}
+
+.canvas-bg-preset {
+  padding: 5px 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  min-width: 0;
+  width: auto;
+}
+
 .glyph-shape-select:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -506,6 +554,149 @@ small {
   backdrop-filter: blur(8px);
   padding: 4px 6px;
   box-shadow: 0 4px 16px rgba(10, 22, 34, 0.18);
+}
+
+/* Dark mode */
+.dark .panel {
+  background: rgba(22, 30, 42, 0.92);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.dark .left-panel {
+  color: #d4dce6;
+}
+
+.dark .left-panel h1,
+.dark .left-panel h2,
+.dark .preview-head h2 {
+  color: #e8edf2;
+}
+
+.dark .left-panel > header p,
+.dark .preview-head p,
+.dark small {
+  color: #8a9bb0;
+}
+
+.dark .left-panel section {
+  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.dark .tab {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #b8c8d8;
+}
+
+.dark .tab.active {
+  background: linear-gradient(135deg, #d4783a, #c24a3a);
+  color: #fff;
+  border-color: rgba(180, 60, 30, 0.5);
+}
+
+.dark input,
+.dark select,
+.dark textarea {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #d4dce6;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #6a7d90;
+}
+
+.dark button {
+  color: #fff;
+}
+
+.dark .dark-mode-toggle {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #d4dce6;
+}
+
+.dark .dark-mode-toggle:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dark .aa-style-row {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.dark .aa-token {
+  background: rgba(255, 255, 255, 0.08);
+  color: #d4dce6;
+}
+
+.dark .preview-frame {
+  border-color: rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    #1a2030;
+  background-size: 24px 24px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.dark .preview-zoom-controls {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(30, 38, 50, 0.8);
+}
+
+.dark .preview-zoom-btn {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.07);
+  color: #d4dce6;
+}
+
+.dark .preview-zoom-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.dark .preview-zoom-value {
+  color: #a0b0c0;
+}
+
+.dark .warning-badge {
+  background: rgba(180, 120, 30, 0.3);
+  border-color: rgba(180, 120, 30, 0.4);
+  color: #e8c070;
+}
+
+.dark .error-text {
+  color: #e86060;
+}
+
+.dark .status-text {
+  color: #50c0a8;
+}
+
+.dark .legend-editor {
+  background: rgba(22, 30, 42, 0.95);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  color: #d4dce6;
+}
+
+.dark .preview-empty h3 {
+  color: #d4dce6;
+}
+
+.dark .preview-empty p {
+  color: #8a9bb0;
+}
+
+.dark .inline-checkbox {
+  color: #b8c8d8;
+}
+
+.dark .fullscreen-toolbar {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(22, 30, 42, 0.85);
 }
 
 @media (max-width: 1100px) {

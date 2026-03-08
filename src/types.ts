@@ -42,6 +42,7 @@ export interface LegendSettings {
   paddingScale: number;
   textAlign: 'left' | 'center' | 'right';
   boldText: boolean;
+  textColor: string;
   fontFamily: FontFamilyId;
   xOffset: number;
   yOffset: number;
@@ -77,6 +78,7 @@ export interface ArtSettings {
   spacing: number;
   density: number;
   jitter: number;
+  canvasBg: string;
   glyphLabels: GlyphLabelSettings;
   legend: LegendSettings;
 }

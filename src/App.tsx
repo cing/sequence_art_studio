@@ -116,6 +116,7 @@ function createDefaultArtSettings(): ArtSettings {
       whiteBackground: false,
     },
     showArtBorder: true,
+    canvasBg: '#ffffff',
     scale: 1,
     spacing: 1,
     density: 1,
@@ -137,6 +138,7 @@ function createDefaultArtSettings(): ArtSettings {
       paddingScale: 1,
       textAlign: 'left',
       boldText: false,
+      textColor: '#12212a',
       fontFamily: 'space_grotesk',
       xOffset: 0,
       yOffset: 0,
@@ -677,6 +679,18 @@ function App() {
   const [previewDragging, setPreviewDragging] = useState(false);
   const [showLegendEditor, setShowLegendEditor] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    setArtSettings((current) => ({
+      ...current,
+      canvasBg: darkMode ? '#000000' : '#ffffff',
+      legend: {
+        ...current.legend,
+        textColor: darkMode ? '#ffffff' : '#12212a',
+      },
+    }));
+  }, [darkMode]);
 
   useEffect(() => {
     if (!isFullscreen) return;
@@ -712,7 +726,7 @@ function App() {
     record?.sequence ?? '',
   );
 
-  const legendTextColor = '#12212a';
+  const legendTextColor = artSettings.legend.textColor;
 
   const dnaSymbolsInSequence = useMemo(() => {
     if (!record || record.sequenceType !== 'dna') {
@@ -1369,10 +1383,33 @@ function App() {
   }
 
   return (
-    <div className={isFullscreen ? 'app-shell app-shell-fullscreen' : 'app-shell'}>
+    <div className={`app-shell${isFullscreen ? ' app-shell-fullscreen' : ''}${darkMode ? ' dark' : ''}`}>
       <aside className="panel left-panel">
         <header>
-          <h1>Sequence Art Studio</h1>
+          <div className="header-title-row">
+            <h1>Sequence Art Studio</h1>
+            <button
+              type="button"
+              className="dark-mode-toggle"
+              onClick={() => setDarkMode((d) => !d)}
+              aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+              title={darkMode ? 'Light mode' : 'Dark mode'}
+            >
+              {darkMode ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="5" />
+                  <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                  <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+                </svg>
+              )}
+            </button>
+          </div>
           <p>Create printable DNA or protein visuals from FASTA or accession IDs.</p>
         </header>
 
@@ -1932,10 +1969,37 @@ function App() {
         </section>
 
         <section className="export-section">
-          <h2>Export</h2>
+          <h2>Canvas</h2>
 
           <label className="stack">
-            Print preset
+            Background
+            <div className="canvas-bg-row">
+              <input
+                type="color"
+                value={artSettings.canvasBg}
+                onChange={(event) =>
+                  setArtSettings((current) => ({ ...current, canvasBg: event.target.value }))
+                }
+              />
+              <button
+                type="button"
+                className="canvas-bg-preset"
+                onClick={() => setArtSettings((current) => ({ ...current, canvasBg: '#ffffff' }))}
+              >
+                White
+              </button>
+              <button
+                type="button"
+                className="canvas-bg-preset"
+                onClick={() => setArtSettings((current) => ({ ...current, canvasBg: '#000000' }))}
+              >
+                Black
+              </button>
+            </div>
+          </label>
+
+          <label className="stack">
+            Canvas preset
             <select
               value={exportSettings.presetId}
               onChange={(event) => setExportSettings((current) => ({ ...current, presetId: event.target.value }))}
@@ -2113,7 +2177,7 @@ function App() {
                   height="100%"
                   preserveAspectRatio="xMidYMid meet"
                 >
-                  {renderSurface(layout.widthPx, layout.heightPx)}
+                  {renderSurface(layout.widthPx, layout.heightPx, artSettings.canvasBg)}
 
                   {renderResult?.nodes}
 
@@ -2138,8 +2202,8 @@ function App() {
                       y={legendLayout.boxY}
                       width={legendLayout.boxWidth}
                       height={legendLayout.boxHeight}
-                      fill="#ffffff"
-                      stroke={artSettings.legend.showBorder ? 'rgba(10, 12, 20, 0.2)' : 'transparent'}
+                      fill={artSettings.canvasBg}
+                      stroke={artSettings.legend.showBorder ? (darkMode ? 'rgba(255, 255, 255, 0.15)' : 'rgba(10, 12, 20, 0.2)') : 'transparent'}
                       strokeWidth={artSettings.legend.showBorder ? Math.max(1, Math.round(layout.widthPx * 0.00095)) : 0}
                       rx={Math.max(8, Math.round(layout.widthPx * 0.006))}
                     />
@@ -2348,6 +2412,19 @@ function App() {
                           <option key={option.id} value={option.id}>{option.label}</option>
                         ))}
                       </select>
+                    </label>
+                    <label className="stack">
+                      Text color
+                      <input
+                        type="color"
+                        value={artSettings.legend.textColor}
+                        onChange={(event) =>
+                          setArtSettings((current) => ({
+                            ...current,
+                            legend: { ...current.legend, textColor: event.target.value },
+                          }))
+                        }
+                      />
                     </label>
                     <label className="stack">
                       Align
