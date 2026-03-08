@@ -996,6 +996,7 @@ function App() {
       const text = await file.text();
       await loadFasta(text, 'fasta_file');
       setInputMode('fasta_file');
+      clearUrlParams();
     } catch (error) {
       setInputError(error instanceof Error ? error.message : 'Failed to read FASTA file.');
     } finally {
@@ -1007,6 +1008,7 @@ function App() {
     try {
       await loadFasta(fastaText, 'fasta_text');
       setInputMode('fasta_text');
+      clearUrlParams();
     } catch (error) {
       setInputError(error instanceof Error ? error.message : 'Failed to parse FASTA text.');
     }
@@ -1023,6 +1025,15 @@ function App() {
     resetPreviewView();
     setMetadata(deriveMetadata(nextRecord));
     setInputError(null);
+  }
+
+  function clearUrlParams(): void {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('uniprot') || url.searchParams.has('ncbi')) {
+      url.searchParams.delete('uniprot');
+      url.searchParams.delete('ncbi');
+      window.history.replaceState(null, '', url.toString());
+    }
   }
 
   async function handleAccessionFetch(): Promise<void> {
@@ -1045,6 +1056,10 @@ function App() {
         resetPreviewView();
         setMetadata(deriveMetadata(nextRecord));
         setStatus(`Loaded UniProt ${remote.accession} (protein).`);
+        const url = new URL(window.location.href);
+        url.searchParams.delete('ncbi');
+        url.searchParams.set('uniprot', remote.accession);
+        window.history.replaceState(null, '', url.toString());
       } else {
         const remote = await fetchNcbiNucleotide(accessionInput);
         const nextRecord: SequenceRecord = {
@@ -1059,6 +1074,10 @@ function App() {
         resetPreviewView();
         setMetadata(deriveMetadata(nextRecord));
         setStatus(`Loaded NCBI nucleotide ${remote.accession} (DNA).`);
+        const url = new URL(window.location.href);
+        url.searchParams.delete('uniprot');
+        url.searchParams.set('ncbi', remote.accession);
+        window.history.replaceState(null, '', url.toString());
       }
 
       setInputMode('accession');
