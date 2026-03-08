@@ -253,8 +253,8 @@ export function renderGlyphGrid(model: GlyphGridModel, settings: ArtSettings, ui
             <text
               x={cell.x}
               y={cell.y}
+              dy="0.35em"
               textAnchor="middle"
-              dominantBaseline="central"
               fontSize={Math.max(5, cell.size * 0.35 * labelSizeScale)}
               fill={settings.glyphLabels.color}
               stroke="rgba(255, 255, 255, 0.74)"

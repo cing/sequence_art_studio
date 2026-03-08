@@ -701,6 +701,65 @@ function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [isFullscreen]);
 
+  // Load sequence from URL params on mount (e.g. ?uniprot=P69905 or ?ncbi=NM_000546.6)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const uniprotId = params.get('uniprot');
+    const ncbiId = params.get('ncbi');
+
+    if (!uniprotId && !ncbiId) return;
+
+    const accession = (uniprotId ?? ncbiId)!;
+    const provider: 'uniprot' | 'ncbi_nucleotide' = uniprotId ? 'uniprot' : 'ncbi_nucleotide';
+
+    setInputMode('accession');
+    setAccessionProvider(provider);
+    setAccessionInput(accession);
+
+    (async () => {
+      try {
+        setLoadingRemote(true);
+        if (provider === 'uniprot') {
+          const remote = await fetchUniProt(accession);
+          const nextRecord: SequenceRecord = {
+            sequence: remote.sequence,
+            sequenceType: 'protein',
+            accession: remote.accession,
+            geneName: remote.geneName,
+            proteinName: remote.proteinName,
+            displayName: remote.proteinName ?? remote.geneName ?? remote.accession,
+            organism: remote.organism,
+            source: 'uniprot',
+          };
+          setRecord(nextRecord);
+          resetPreviewView();
+          setMetadata(deriveMetadata(nextRecord));
+          setStatus(`Loaded UniProt ${remote.accession} (protein).`);
+        } else {
+          const remote = await fetchNcbiNucleotide(accession);
+          const nextRecord: SequenceRecord = {
+            sequence: remote.sequence,
+            sequenceType: 'dna',
+            accession: remote.accession,
+            displayName: remote.title ?? remote.accession,
+            organism: remote.organism,
+            source: 'ncbi_nucleotide',
+          };
+          setRecord(nextRecord);
+          resetPreviewView();
+          setMetadata(deriveMetadata(nextRecord));
+          setStatus(`Loaded NCBI nucleotide ${remote.accession} (DNA).`);
+        }
+        setInputError(null);
+      } catch (error) {
+        setInputError(error instanceof Error ? error.message : 'Failed to load accession from URL.');
+      } finally {
+        setLoadingRemote(false);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const activeSequenceType: SequenceType = record?.sequenceType ?? 'protein';
 
   const layout = useMemo(
