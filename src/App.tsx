@@ -830,11 +830,12 @@ function App() {
     }));
   }, [activeSymbols, activeSequenceType, artSettings, wangTerrainStates, wangLegendSymbols, wangSymbolProfiles]);
 
-  const showLegendTitle = artSettings.legend.enabled;
-  const showSymbolLegendInPreview = artSettings.legend.showSymbolMap;
+  const legendEnabled = artSettings.legend.enabled;
+  const showLegendTitle = legendEnabled;
+  const showSymbolLegendInPreview = legendEnabled && artSettings.legend.showSymbolMap;
   const showTypeLengthInLegend = showLegendTitle && artSettings.legend.showTypeLength;
   const showSymbolLegendTitleInPreview = showSymbolLegendInPreview && artSettings.legend.showSymbolKeyTitle;
-  const legendHasContent = showLegendTitle || showSymbolLegendInPreview;
+  const legendHasContent = legendEnabled && (showLegendTitle || showSymbolLegendInPreview);
   const legendFontCss = resolveFontFamily(artSettings.legend.fontFamily);
   const legendTextAnchor: 'start' | 'middle' | 'end' =
     artSettings.legend.textAlign === 'center'
@@ -1023,18 +1024,18 @@ function App() {
       setExporting(true);
       setStatus('Preparing export...');
       if (exportSettings.format === 'svg') {
-        exportSvg(svg, `${base}.svg`, exportSettings.includeLegend);
+        exportSvg(svg, `${base}.svg`, legendHasContent);
       } else if (exportSettings.format === 'png') {
         await exportPng(
           svg,
           `${base}.png`,
-          exportSettings.includeLegend,
+          legendHasContent,
           layout.widthPx,
           layout.heightPx,
           exportSettings.dpiScale,
         );
       } else {
-        await exportPdf(svg, `${base}.pdf`, exportSettings.includeLegend, preset.widthIn, preset.heightIn);
+        await exportPdf(svg, `${base}.pdf`, legendHasContent, preset.widthIn, preset.heightIn);
       }
       setStatus(`Exported ${base}.${exportSettings.format}`);
     } catch (error) {
@@ -1074,23 +1075,27 @@ function App() {
 
     const textWrapChars = Math.max(12, Math.floor((scaledWidthForWrap - padding * 2) / (unit * 0.58)));
 
-    const titleLines = showLegendTitle ? wrapWords(metadata.title || 'Untitled sequence', textWrapChars).slice(0, 3) : [];
+    const titleLines = showLegendTitle && metadata.title ? wrapWords(metadata.title, textWrapChars).slice(0, 3) : [];
     const subtitleLines =
       showLegendTitle && metadata.subtitle ? wrapWords(metadata.subtitle, textWrapChars).slice(0, 2) : [];
     const footerLines = showTypeLengthInLegend ? wrapWords(footerText, textWrapChars).slice(0, 2) : [];
 
-    const titleFont = clamp(Math.round(unit * 1.06), 14, 48);
-    const subtitleFont = clamp(Math.round(unit * 0.78), 11, 32);
-    const footerFont = clamp(Math.round(unit * 0.7), 10, 30);
+    // Unified font sizes: title slightly larger, everything else same size
+    const baseFont = clamp(Math.round(unit * 0.78), 11, 32);
+    const titleFont = clamp(Math.round(baseFont * 1.2), 13, 42);
+    const subtitleFont = baseFont;
+    const footerFont = baseFont;
 
-    const titleHeight = titleLines.length * titleFont * 1.15;
-    const subtitleHeight = subtitleLines.length * subtitleFont * 1.2;
-    const footerHeight = footerLines.length * footerFont * 1.2;
+    const lineHeight = 1.25;
+    const titleHeight = titleLines.length * titleFont * lineHeight;
+    const subtitleHeight = subtitleLines.length * subtitleFont * lineHeight;
+    const footerHeight = footerLines.length * footerFont * lineHeight;
 
-    const subtitleGap = showLegendTitle && subtitleLines.length > 0 ? unit * 0.32 : 0;
-    const footerGap = showTypeLengthInLegend ? unit * 0.38 : 0;
-    const symbolTitleGap = showSymbolLegendTitleInPreview ? (showLegendTitle ? unit * 0.72 : unit * 0.56) : 0;
-    const textHeight = showLegendTitle ? titleHeight + subtitleGap + subtitleHeight + footerGap + footerHeight : 0;
+    const hasAnyText = titleLines.length > 0 || subtitleLines.length > 0 || footerLines.length > 0;
+    const textGap = unit * 0.25;
+    const subtitleGap = subtitleLines.length > 0 && titleLines.length > 0 ? textGap : 0;
+    const footerGap = footerLines.length > 0 && (titleLines.length > 0 || subtitleLines.length > 0) ? textGap : 0;
+    const textHeight = titleHeight + subtitleGap + subtitleHeight + footerGap + footerHeight;
 
     const symbolCellHeight = clamp(Math.round(unit * 1.44), 22, 62);
     const symbolCellWidth = clamp(
@@ -1104,14 +1109,14 @@ function App() {
       ? clamp(Math.floor(innerWidth / symbolCellWidth), 2, 10)
       : 0;
     const symbolRows = symbolCols > 0 ? Math.ceil(legendEntries.length / symbolCols) : 0;
-    const symbolMapHeight = symbolRows > 0 ? symbolRows * symbolCellHeight + symbolTitleGap : 0;
+    const symbolTitleHeight = showSymbolLegendTitleInPreview ? baseFont * lineHeight : 0;
+    const symbolTitleGap = showSymbolLegendTitleInPreview ? textGap : 0;
+    const textToSymbolGap = (hasAnyText && symbolRows > 0) ? textGap * 1.5 : 0;
+    const symbolMapHeight = symbolRows > 0 ? symbolTitleHeight + symbolTitleGap + symbolRows * symbolCellHeight : 0;
 
-    const desiredHeight = Math.round(
-      padding * 2 +
-      textHeight +
-      (symbolMapHeight > 0 ? (showLegendTitle ? unit * 0.42 : unit * 0.2) : unit * 0.24) +
-      symbolMapHeight,
-    );
+    // Compute total content height, then vertically center inside the box
+    const contentHeight = textHeight + textToSymbolGap + symbolMapHeight;
+    const desiredHeight = Math.round(padding * 2 + contentHeight);
 
     const boxHeight = clamp(Math.round(desiredHeight * heightScale), Math.min(container.height, 110), container.height);
     const boxWidth = clamp(scaledWidthForWrap, Math.min(container.width, 220), container.width);
@@ -1127,11 +1132,15 @@ function App() {
     const actualSymbolCols = symbolCols > 0 ? clamp(Math.floor(actualInnerWidth / symbolCellWidth), 2, 10) : 0;
     const actualSymbolCellWidth = actualSymbolCols > 0 ? actualInnerWidth / actualSymbolCols : 0;
 
-    const titleStartY = showLegendTitle ? boxY + padding + titleFont : boxY + padding;
-    const subtitleStartY = showLegendTitle ? titleStartY + titleHeight + subtitleGap : titleStartY;
-    const footerStartY = showLegendTitle ? subtitleStartY + subtitleHeight + footerGap : subtitleStartY;
-    const textBottomY = showLegendTitle ? footerStartY + footerHeight : boxY + padding;
-    const symbolGridTop = textBottomY + symbolTitleGap;
+    // Vertically center content within the box
+    const verticalPad = (boxHeight - contentHeight) / 2;
+    const contentTop = boxY + verticalPad;
+
+    const titleStartY = titleLines.length > 0 ? contentTop + titleFont : contentTop;
+    const subtitleStartY = titleStartY + titleHeight + subtitleGap;
+    const footerStartY = subtitleStartY + subtitleHeight + footerGap;
+    const textBottomY = contentTop + textHeight;
+    const symbolGridTop = textBottomY + textToSymbolGap + symbolTitleHeight + symbolTitleGap;
 
     return {
       boxX,
@@ -1152,7 +1161,7 @@ function App() {
       symbolCellW: actualSymbolCellWidth,
       symbolCellH: symbolCellHeight,
       symbolGridTop,
-      symbolTitleY: showSymbolLegendTitleInPreview ? textBottomY + (showLegendTitle ? unit * 0.34 : unit * 0.78) : textBottomY,
+      symbolTitleY: textBottomY + textToSymbolGap + baseFont,
     };
   }, [
     layout.legendRect,
@@ -1488,7 +1497,7 @@ function App() {
         </section>
 
         <section className="metadata-section">
-          <h2>Metadata Legend</h2>
+          <h2>Legend</h2>
           <small>Edit legend text directly in the preview editor panel.</small>
 
           <div className="metadata-toggle-grid">
@@ -1503,14 +1512,14 @@ function App() {
                   }))
                 }
               />
-              legend title
+              legend
             </label>
 
             <label className="inline-checkbox">
               <input
                 type="checkbox"
                 checked={artSettings.legend.showTypeLength}
-                disabled={!showLegendTitle}
+                disabled={!legendEnabled}
                 onChange={(event) =>
                   setArtSettings((current) => ({
                     ...current,
@@ -1525,6 +1534,7 @@ function App() {
               <input
                 type="checkbox"
                 checked={artSettings.legend.showSymbolMap}
+                disabled={!legendEnabled}
                 onChange={(event) =>
                   setArtSettings((current) => ({
                     ...current,
@@ -1539,7 +1549,7 @@ function App() {
               <input
                 type="checkbox"
                 checked={artSettings.legend.showSymbolKeyTitle}
-                disabled={!showSymbolLegendInPreview}
+                disabled={!legendEnabled || !artSettings.legend.showSymbolMap}
                 onChange={(event) =>
                   setArtSettings((current) => ({
                     ...current,
@@ -1554,7 +1564,7 @@ function App() {
               <input
                 type="checkbox"
                 checked={artSettings.legend.showBorder}
-                disabled={!legendHasContent}
+                disabled={!legendEnabled}
                 onChange={(event) =>
                   setArtSettings((current) => ({
                     ...current,
@@ -1565,28 +1575,6 @@ function App() {
               legend border
             </label>
           </div>
-
-          <label className="stack">
-            Legend position
-            <select
-              value={artSettings.legend.position}
-              disabled={!legendHasContent}
-              onChange={(event) =>
-                setArtSettings((current) => ({
-                  ...current,
-                  legend: {
-                    ...current.legend,
-                    position: event.target.value as ArtSettings['legend']['position'],
-                  },
-                }))
-              }
-            >
-              <option value="bottom">Bottom</option>
-              <option value="top">Top</option>
-              <option value="left">Left</option>
-              <option value="right">Right</option>
-            </select>
-          </label>
 
         </section>
 
@@ -2046,20 +2034,6 @@ function App() {
             </label>
           ) : null}
 
-          <label className="inline-checkbox">
-            <input
-              type="checkbox"
-              checked={exportSettings.includeLegend}
-              onChange={(event) =>
-                setExportSettings((current) => ({
-                  ...current,
-                  includeLegend: event.target.checked,
-                }))
-              }
-            />
-            Include legend in export
-          </label>
-
           <button onClick={handleExport} disabled={!record || exporting}>
             {exporting ? 'Exporting...' : `Export ${exportSettings.format.toUpperCase()}`}
           </button>
@@ -2222,7 +2196,7 @@ function App() {
                         {legendLayout.titleLines.map((line, index) => (
                           <tspan
                             x={legendTextX}
-                            dy={index === 0 ? 0 : `${1.15}em`}
+                            dy={index === 0 ? 0 : `${1.25}em`}
                             key={`title-line-${line}-${index}`}
                           >
                             {line}
@@ -2236,13 +2210,13 @@ function App() {
                         fill={legendTextColor}
                         textAnchor={legendTextAnchor}
                         fontFamily={legendFontCss}
-                        fontWeight={artSettings.legend.boldText ? 600 : 450}
+                        fontWeight={artSettings.legend.boldText ? 600 : 400}
                         fontSize={legendLayout.subtitleFont}
                       >
                         {legendLayout.subtitleLines.map((line, index) => (
                           <tspan
                             x={legendTextX}
-                            dy={index === 0 ? 0 : `${1.2}em`}
+                            dy={index === 0 ? 0 : `${1.25}em`}
                             key={`subtitle-line-${line}-${index}`}
                           >
                             {line}
@@ -2257,13 +2231,13 @@ function App() {
                           fill={legendTextColor}
                           textAnchor={legendTextAnchor}
                           fontFamily={legendFontCss}
-                          fontWeight={artSettings.legend.boldText ? 600 : 450}
+                          fontWeight={artSettings.legend.boldText ? 600 : 400}
                           fontSize={legendLayout.footerFont}
                         >
                           {legendLayout.footerLines.map((line, index) => (
                             <tspan
                               x={legendTextX}
-                              dy={index === 0 ? 0 : `${1.2}em`}
+                              dy={index === 0 ? 0 : `${1.25}em`}
                               key={`footer-line-${line}-${index}`}
                             >
                               {line}
@@ -2282,8 +2256,8 @@ function App() {
                             y={legendLayout.symbolTitleY}
                             fill={legendTextColor}
                             fontFamily={legendFontCss}
-                            fontWeight={artSettings.legend.boldText ? 700 : 600}
-                            fontSize={Math.max(12, Math.round(legendLayout.subtitleFont * 0.94))}
+                            fontWeight={artSettings.legend.boldText ? 600 : 500}
+                            fontSize={legendLayout.subtitleFont}
                           >
                             {symbolLegendTitle(record.sequenceType, artSettings.mode)}
                           </text>
@@ -2297,13 +2271,7 @@ function App() {
                           const cellY = legendLayout.symbolGridTop + row * legendLayout.symbolCellH;
                           const shapeSize = Math.min(legendLayout.symbolCellH * 0.78, legendLayout.symbolCellW * 0.35);
                           const label = entry.label;
-                          const symbolFont = Math.max(
-                            8,
-                            Math.min(
-                              Math.round(legendLayout.footerFont * 0.92),
-                              Math.round((legendLayout.symbolCellW * 0.52) / Math.max(1, label.length * 0.58)),
-                            ),
-                          );
+                          const symbolFont = Math.max(8, Math.round(legendLayout.footerFont * 0.92));
 
                           return (
                             <g key={`legend-symbol-${label}`}>
